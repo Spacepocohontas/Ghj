@@ -1,6 +1,8 @@
 const ALLOWED_ORIGINS = [
   'https://spacepocohontas.github.io',
-  'https://cadence-studio-snowy.vercel.app'
+  'https://cadence-studio-snowy.vercel.app',
+  'https://ghj-git-main-ohnoitstamara-4066.vercel.app',
+  'https://ghj-1ul6y6d5b-ohnoitstamara-4066.vercel.app'
 ];
 
 function cors(res, origin) {
