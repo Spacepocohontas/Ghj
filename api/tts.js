@@ -38,17 +38,31 @@ async function clone(req, res) {
   form.append('name', String(name).slice(0, 100));
   if (description) form.append('description', String(description).slice(0, 1000));
   form.append('remove_background_noise', String(Boolean(removeBackgroundNoise)));
+  let added = 0;
   for (let i = 0; i < samples.length; i++) {
     const s = samples[i] || {};
-    if (!s.data) continue;
-    const raw = String(s.data);
-    const m = raw.match(/^data:([^;,]+)?;base64,(.+)$/);
-    if (!m) continue;
-    const mime = m[1] || s.type || 'audio/webm';
-    const bytes = Buffer.from(m[2], 'base64');
-    if (bytes.length > 25 * 1024 * 1024) return res.status(413).json({ error: 'Each audio sample must be 25 MB or smaller.' });
-    form.append('files[]', new Blob([bytes], { type: mime }), s.name || `sample-${i + 1}`);
+    if (s.url) {
+      const upstreamSample = await fetch(String(s.url));
+      if (!upstreamSample.ok) return res.status(400).json({ error: `Could not read uploaded sample ${i + 1}.` });
+      const bytes = Buffer.from(await upstreamSample.arrayBuffer());
+      if (bytes.length > 25 * 1024 * 1024) return res.status(413).json({ error: 'Each audio sample must be 25 MB or smaller.' });
+      const mime = s.type || upstreamSample.headers.get('content-type') || 'application/octet-stream';
+      form.append('files[]', new Blob([bytes], { type: mime }), s.name || `sample-${i + 1}`);
+      added++;
+      continue;
+    }
+    if (s.data) {
+      const raw = String(s.data);
+      const m = raw.match(/^data:([^;,]+)?;base64,(.+)$/);
+      if (!m) continue;
+      const mime = m[1] || s.type || 'audio/webm';
+      const bytes = Buffer.from(m[2], 'base64');
+      if (bytes.length > 25 * 1024 * 1024) return res.status(413).json({ error: 'Each audio sample must be 25 MB or smaller.' });
+      form.append('files[]', new Blob([bytes], { type: mime }), s.name || `sample-${i + 1}`);
+      added++;
+    }
   }
+  if (!added) return res.status(400).json({ error: 'No readable voice samples were supplied.' });
   const upstream = await fetch('https://api.elevenlabs.io/v1/voices/add', { method: 'POST', headers: { 'xi-api-key': key }, body: form });
   const type = upstream.headers.get('content-type') || '';
   const data = type.includes('json') ? await upstream.json().catch(() => ({})) : { raw: await upstream.text() };
