@@ -139,7 +139,7 @@ host — all optional integrations. None of them is the home.
 | PIN lock (salted SHA-256, raw PIN never stored) | ✅ | `app.js` | — |
 | Local-first storage (IndexedDB vault) | ✅ | `app.js` | — |
 | Export backup / delete everything | ✅ | `app.js` (Vault tab) | Now exports every vault section; the API key is deliberately excluded |
-| **Encryption at rest** | ⬜ | — | The PIN is a *door*, not a *safe*. Anyone with devtools or the disk can read the vault in plaintext |
+| **Encryption at rest** | ✅ | `app.js` (`window.nfVault`) | Opt-in from Settings → Vault encryption. AES-GCM-256, key = PBKDF2-SHA256(PIN, 210k). Records are stored as `{__nfEnc,iv,ct}`; only the `security` record stays plaintext. Key is memory-only, so every reload asks for the PIN. A backup downloads before it is switched on, because a forgotten PIN is unrecoverable |
 | Import a backup | ✅ | `app.js` (Vault tab) | Merge or replace; arrays de-duplicated by id |
 
 ### Characters
@@ -238,7 +238,7 @@ host — all optional integrations. None of them is the home.
 | Per-conversation model override | ✅ | `forge-pass2.js` | — |
 | **Local models** | ✅ | via "Custom OpenAI-compatible endpoint" | Ollama / LM Studio / llama.cpp already work today — point it at `http://localhost:11434/v1/chat/completions`. This is more done than you may realize |
 | Per-*character* model preference | ⬜ | — | Override is per conversation, not per character |
-| Key stored in plaintext IndexedDB | ⚠️ | — | Same encryption gap as everything else |
+| Key stored in plaintext IndexedDB | ⚠️ | — | Encrypted with everything else once vault encryption is on; still plaintext until then |
 
 ### Media
 
@@ -268,7 +268,7 @@ host — all optional integrations. None of them is the home.
 
 | Ask | Status | Notes |
 |---|---|---|
-| 🎬 Scenes & stories as first-class objects | ⬜ | Scenario is a text field on a character; there is no scene/story entity, no plot tracker, no campaign |
+| 🎬 Scenes & stories as first-class objects | ✅ | `scenes.js` — a scene owns a title, location, time, atmosphere, premise, cast, plot threads and its own log; conversations carry a `sceneId`; the active scene is its own prompt section (priority 35). Multi-character casts are stored but only one character speaks so far |
 | 🎨 Image generation | ⬜ | — |
 | 🎥 Video generation | ⬜ | — |
 | 🌐 Web search / crawl | ⬜ | An "Abilities" screen has a `web` toggle that saves a boolean and does nothing |
@@ -283,10 +283,13 @@ host — all optional integrations. None of them is the home.
 This isn't criticism of the app; it's the thing that will decide how fast the
 rest of the vision can be built.
 
-- **27 scripts, 19 of which wrap `window.render`.** Every feature re-wraps the
+- **25 scripts, most of which wrap `window.render`.** Every feature re-wraps the
   previous one's render function. It works, but load order silently decides who
-  wins: `forge-studio.js` owns the Voices tab, so the voice UIs in
-  `voice-library.js` and `capability-studio.js` are unreachable dead code.
+  wins. The screens that lost those races — `voice-library.js`,
+  `conversation-branches.js`, `chat-upgrades.js` and the unreachable
+  lorebook/voice pages inside `capability-studio.js` — have now been **deleted**,
+  along with the duplicate regenerate and branch buttons they injected. The
+  wrapping pattern itself is still the debt.
 - ~~4 separate `window.fetch` monkey-patches~~ **Fixed.** `nf-core.js` now owns
   the single interceptor and modules register named sections
   (`character`, `persona`, `assignedLorebooks`, `state`, `memory`) with
@@ -295,8 +298,8 @@ rest of the vision can be built.
   context windows.
 - **Duplicate data stores.** `nf-core.js` migrates the stray `voices` /
   `voiceLibrary` / `lorebooks` keys into the canonical stores on first load, so
-  nothing is stranded. The redundant *screens* still exist as dead code and
-  should be deleted; character-card import is still implemented three times.
+  nothing is stranded. The redundant screens are gone; character-card import is
+  still implemented three times.
 - **No build step, no modules, no tests until now.** A single stray brace took
   out the entire Media Lab and the entire autonomy engine, silently, for weeks —
   which is exactly what `npm test` now catches.
@@ -310,7 +313,7 @@ that owns rendering. Everything in Part 4 gets dramatically cheaper afterward.
 ## Part 4 — Suggested build order
 
 **Now — make what exists trustworthy**
-1. ✅ Unified the voice and lorebook stores (auto-migration). *Still to do: delete the dead screens.*
+1. ✅ Unified the voice and lorebook stores (auto-migration), and deleted the dead screens.
 2. ✅ One prompt builder (`nf-core.js`) replacing the four fetch patches.
 3. ✅ Backup import, and a complete export.
 
@@ -318,13 +321,13 @@ that owns rendering. Everything in Part 4 gets dramatically cheaper afterward.
 4. ✅ Typed memories: `fact` · `event` · `relationship` · `plot` · `world` · `preference`, plus pinning.
 5. ✅ Memory Studio — see, edit, pin, delete, search and export what a character knows.
 6. ✅ Ranked retrieval (idf + type weight + recency, budgeted). Embedding-based retrieval stays optional and free via a local model later.
-7. Model-driven state deltas: after each reply, ask for a compact JSON patch of mood/relationship/goals/threads instead of matching keywords. Add numeric trust/affection so repair is gradual.
-8. Encryption at rest derived from the PIN — free, but needs a careful migration so nobody is locked out of their own characters.
+7. ✅ Model-driven state deltas: numeric trust/affection/tension that drift on keywords, plus an opt-in JSON patch pass (Settings → "Let the model track mood & relationship"). Repair is gradual by design.
+8. ✅ Encryption at rest derived from the PIN: AES-GCM-256 keyed by PBKDF2 (210k) over the PIN, opt-in from Settings, with a forced backup download first and an explicit "a forgotten PIN cannot be recovered" warning. The key is memory-only, so every reload re-locks; changing the PIN re-keys the store.
 
 **Then — worlds**
-8. Scenes & Stories as real objects: a scene has a location, cast, active plot threads and its own memory; conversations belong to scenes.
-9. Personas injected into prompts (they're already stored).
-10. Multi-character scenes.
+9. ✅ Scenes & Stories as real objects (`scenes.js`): location, time, atmosphere, premise, cast, plot threads and a scene log; conversations belong to a scene and the scene is injected into the prompt. Scene recaps can be generated with the same free model.
+10. ✅ Personas injected into prompts.
+11. Multi-character scenes — the data model already holds a cast; the reply loop still assumes one speaker.
 
 **Then — senses**
 11. Image generation behind the same provider abstraction, with a gallery attached to characters/scenes.
@@ -337,7 +340,7 @@ that owns rendering. Everything in Part 4 gets dramatically cheaper afterward.
 16. Background autonomy via a service worker + notifications.
 
 **Ongoing**
-17. Encryption at rest derived from the PIN — the one gap between "private" and "actually private."
+17. Group scenes, a scene browser outside the chat, and campaigns that string scenes together.
 
 ---
 

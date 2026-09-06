@@ -396,7 +396,8 @@ await step('vault encryption: seal, lock, unlock, rekey', async () => {
   if (!$('#toggleEncryption')) throw new Error('encryption control missing from Settings');
 
   const secret = 'Nightshade secret phrase ' + Date.now();
-  await runScript(`put('characters',[{id:'enc-1',name:${JSON.stringify(secret)},personality:'hidden',memory:[]}])`, 'smoke:enc-seed');
+  const priorChars = await runScript("get('characters')", 'smoke:enc-prior');
+  await runScript(`put('characters',[...${JSON.stringify(priorChars)},{id:'enc-1',name:${JSON.stringify(secret)},personality:'hidden',memory:[]}])`, 'smoke:enc-seed');
 
   // plaintext today: the raw record is readable straight off the store
   let raw = await runScript("nfVault.rawGet('characters')", 'smoke:raw0');
@@ -414,7 +415,7 @@ await step('vault encryption: seal, lock, unlock, rekey', async () => {
 
   // still transparent to the app while unlocked
   let cs = await runScript("get('characters')", 'smoke:read1');
-  if (cs[0].name !== secret) throw new Error('encrypted data is not readable while unlocked');
+  if (!cs.some(c => c.name === secret)) throw new Error('encrypted data is not readable while unlocked');
 
   // simulate a reload: the key lives only in memory
   await runScript('nfVault.lock()', 'smoke:lock');
@@ -425,7 +426,7 @@ await step('vault encryption: seal, lock, unlock, rekey', async () => {
   if (await runScript("nfVault.unlock('9999')", 'smoke:badpin')) throw new Error('the wrong PIN unlocked the vault');
   if (!(await runScript("nfVault.unlock('1234')", 'smoke:goodpin'))) throw new Error('the correct PIN did not unlock the vault');
   cs = await runScript("get('characters')", 'smoke:read3');
-  if (cs[0].name !== secret) throw new Error('data unreadable after unlocking');
+  if (!cs.some(c => c.name === secret)) throw new Error('data unreadable after unlocking');
 
   // writes stay sealed
   await runScript("put('settings',{probe:'still-secret'})", 'smoke:write');
@@ -459,7 +460,7 @@ await step('vault encryption: seal, lock, unlock, rekey', async () => {
   if (await runScript("nfVault.unlock('1234')", 'smoke:oldpin')) throw new Error('the old PIN still opens the vault after a PIN change');
   if (!(await runScript("nfVault.unlock('4321')", 'smoke:newpin'))) throw new Error('the new PIN does not open the vault — data would be lost');
   cs = await runScript("get('characters')", 'smoke:read4');
-  if (!cs || cs[0].name !== secret) throw new Error('data unreadable after a PIN change');
+  if (!cs || !cs.some(c => c.name === secret)) throw new Error('data unreadable after a PIN change');
 
   // turning it back off restores plaintext
   const dec = await runScript("nfVault.disable('4321')", 'smoke:disable');
@@ -468,6 +469,79 @@ await step('vault encryption: seal, lock, unlock, rekey', async () => {
   if (!JSON.stringify(raw).includes(secret)) throw new Error('disabling encryption did not restore readable data');
   if (raw.__nfEnc) throw new Error('records still sealed after disabling');
   globalThis.expectedWarn = null;
+  await runScript(`put('characters',${JSON.stringify(priorChars)})`, 'smoke:enc-restore');
+});
+
+await step('scenes are first-class and steer the prompt', async () => {
+  window.state.tab = 'chat';
+  const cast = await runScript("get('characters')", 'smoke:sc-chars');
+  if (!cast.some(c => c.id === window.state.chat)) window.state.chat = cast[0].id;
+  await window.render();
+  await tick(200);
+
+  const sections = await runScript('nfPrompt.list()', 'smoke:sc-sections');
+  if (!sections.includes('scene')) throw new Error('scene prompt section is not registered');
+
+  const bar = $('#nfSceneBar');
+  if (!bar) throw new Error('the chat has no scene bar');
+
+  // a scene exists on its own, seeded from the character, and the conversation points at it
+  let scene = await runScript('nfScenes.activeScene()', 'smoke:sc-active');
+  if (!scene || !scene.id) throw new Error('no scene was created for the conversation');
+  const convs = await runScript("get('conversations')", 'smoke:sc-convs');
+  if (!convs.some(c => c.sceneId === scene.id)) throw new Error('the conversation is not linked to the scene');
+
+  await runScript(`nfScenes.updateScene(${JSON.stringify(scene.id)},{title:'The rooftop',location:'A rain-slick rooftop above Verity Street',timeOfDay:'Just after midnight',mood:'Tense',premise:'They agreed to meet where no one could listen.'})`, 'smoke:sc-update');
+  await runScript(`nfScenes.addThread(${JSON.stringify(scene.id)},'She has not mentioned the letter yet')`, 'smoke:sc-thread');
+  await runScript(`nfScenes.addThread(${JSON.stringify(scene.id)},'The courier is already dead')`, 'smoke:sc-thread2');
+  scene = await runScript('nfScenes.activeScene()', 'smoke:sc-active2');
+  if ((scene.threads || []).length !== 2) throw new Error('threads were not stored on the scene');
+
+  await runScript(`nfScenes.setThreadStatus(${JSON.stringify(scene.id)},${JSON.stringify(scene.threads[1].id)},'resolved')`, 'smoke:sc-resolve');
+
+  await window.render();
+  await tick(150);
+  if (!$('#nfSceneBar').textContent.includes('The rooftop')) throw new Error('the scene bar does not show the current scene');
+
+  // the editing sheet actually opens and is populated
+  await runScript('nfScenes.openSheet()', 'smoke:sc-sheet');
+  await tick(150);
+  const sheet = window.document.querySelector('.nf-scene-modal');
+  if (!sheet) throw new Error('the scene sheet did not open');
+  if (sheet.querySelector('#scTitle').value !== 'The rooftop') throw new Error('the scene sheet is not populated');
+  if (sheet.querySelectorAll('.nf-scene-thread').length !== 2) throw new Error('threads are not listed in the sheet');
+  if (!sheet.querySelector('.nf-scene-thread.done')) throw new Error('resolved threads are not marked in the sheet');
+  sheet.querySelector('.nf-scene-close').click();
+  if (window.document.querySelector('.nf-scene-modal')) throw new Error('the scene sheet would not close');
+
+  lastRequest = null;
+  $('#forgeText').value = 'I climb the last flight of stairs.';
+  $('#forgeSend').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+  await tick(300);
+  if (!lastRequest) throw new Error('no provider request was captured');
+  const sys = lastRequest.messages.find(m => m.role === 'system').content;
+  if ((sys.split('[CURRENT SCENE').length - 1) !== 1) throw new Error('the scene block is missing or duplicated in the prompt');
+  if (!sys.includes('rain-slick rooftop')) throw new Error('the scene location never reached the model');
+  if (!sys.includes('Just after midnight')) throw new Error('the scene time never reached the model');
+  if (!sys.includes('has not mentioned the letter')) throw new Error('open plot threads never reached the model');
+  if (!sys.includes('Already resolved')) throw new Error('resolved threads are not being fenced off');
+  if (sys.length > 7000) throw new Error(`system prompt is ${sys.length} chars — too heavy for free models`);
+
+  // switching scenes swaps the story context, it does not edit the old one
+  const second = await runScript("nfScenes.createScene(window.state.chat,{title:'The safehouse',location:'A basement under the flower market'})", 'smoke:sc-new');
+  const now = await runScript('nfScenes.activeScene()', 'smoke:sc-active3');
+  if (now.id !== second.id) throw new Error('creating a scene did not make it active');
+  const stored = await runScript('nfScenes.allScenes()', 'smoke:sc-all');
+  if (stored.length < 2) throw new Error('the previous scene was overwritten instead of kept');
+  if (!stored.find(x => x.id === scene.id).threads.length) throw new Error('the previous scene lost its threads');
+
+  lastRequest = null;
+  $('#forgeText').value = 'I check the door.';
+  $('#forgeSend').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+  await tick(300);
+  const sys2 = lastRequest.messages.find(m => m.role === 'system').content;
+  if (!sys2.includes('flower market')) throw new Error('the new scene did not reach the model');
+  if (sys2.includes('rain-slick rooftop')) throw new Error('the old scene is still being injected');
 });
 
 /* ------------------------------------------------------------------ *
