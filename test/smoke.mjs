@@ -88,8 +88,10 @@ window.SpeechSynthesis = SpeechSynthesis;
 window.speechSynthesis = new SpeechSynthesis();
 window.MediaRecorder = class { static isTypeSupported() { return true } start() {} stop() {} };
 let fetchCalls = 0;
+let lastRequest = null;
 let fetchBody = () => JSON.stringify({ choices: [{ message: { content: 'A scripted reply.' } }] });
-window.fetch = async () => {
+window.fetch = async (input, init) => {
+  try { if (init && typeof init.body === 'string' && init.body.includes('"messages"')) lastRequest = JSON.parse(init.body) } catch {}
   fetchCalls++;
   if (fetchCalls > 200) throw new Error('runaway fetch loop');
   const body = fetchBody();
@@ -239,6 +241,90 @@ await step('branch + regenerate terminate', async () => {
   if (fetchCalls - before > 6) throw new Error(`regenerate looped (${fetchCalls - before} provider calls)`);
   const convs = await runScript("get('conversations')", 'smoke:branches');
   if (convs.length < 2) throw new Error('branch conversation was not created');
+});
+
+
+await step('typed memory: add, rank, pin', async () => {
+  const id = window.state.chat;
+  await runScript(`nfMemory.add(${JSON.stringify(id)},{text:'The user is terrified of deep water.',type:'fact'})`, 'smoke:mem1');
+  await runScript(`nfMemory.add(${JSON.stringify(id)},{text:'They promised to meet at the lighthouse.',type:'plot'})`, 'smoke:mem2');
+  await runScript(`nfMemory.add(${JSON.stringify(id)},{text:'Completely unrelated trivia about spreadsheets.',type:'event'})`, 'smoke:mem3');
+  await runScript(`nfMemory.add(${JSON.stringify(id)},{text:'Always speak in a low voice.',type:'fact',pinned:true})`, 'smoke:mem4');
+  const list = await runScript(`nfMemory.list(${JSON.stringify(id)})`, 'smoke:memlist');
+  if (list.length !== 4) throw new Error(`expected 4 memories, got ${list.length}`);
+  if (list.some(m => !m.id || !m.type)) throw new Error('memories are not normalised');
+  const ranked = await runScript(`nfMemory.retrieve(${JSON.stringify(id)},'we should go to the lighthouse tonight')`, 'smoke:rank');
+  if (!ranked[0].pinned) throw new Error('pinned memory was not injected first');
+  const texts = ranked.map(m => m.text).join(' | ');
+  if (!texts.includes('lighthouse')) throw new Error('relevant memory was not retrieved: ' + texts);
+  const rankedIdx = ranked.findIndex(m => m.text.includes('lighthouse'));
+  const triviaIdx = ranked.findIndex(m => m.text.includes('spreadsheets'));
+  if (triviaIdx >= 0 && triviaIdx < rankedIdx) throw new Error('irrelevant memory outranked the relevant one');
+});
+
+await step('memory studio opens and edits', async () => {
+  const btn = window.document.querySelector('[data-memory]');
+  if (!btn) throw new Error('memory button missing from the chat header');
+  btn.click();
+  await tick(120);
+  if (!$('#nfMemoryModal')) throw new Error('memory studio did not open');
+  const rows = window.document.querySelectorAll('.nf-mem-row');
+  if (rows.length !== 4) throw new Error(`memory studio listed ${rows.length} rows, expected 4`);
+  $('#nfMemText').value = 'Added from the memory studio.';
+  await click('#nfMemAdd');
+  await tick(120);
+  const list = await runScript(`nfMemory.list(${JSON.stringify(window.state.chat)})`, 'smoke:memadd');
+  if (list.length !== 5) throw new Error('memory studio did not save');
+  window.document.querySelector('[data-del-mem]').click();
+  await tick(120);
+  if ((await runScript(`nfMemory.list(${JSON.stringify(window.state.chat)})`, 'smoke:memdel')).length !== 4) throw new Error('memory studio did not delete');
+  $('#nfMemClose').click();
+  await tick(60);
+  if ($('#nfMemoryModal')) throw new Error('memory studio did not close');
+});
+
+await step('one prompt builder assembles the system message', async () => {
+  const sections = await runScript('nfPrompt.list()', 'smoke:sections');
+  for (const id of ['character', 'state', 'memory', 'persona', 'assignedLorebooks']) {
+    if (!sections.includes(id)) throw new Error(`prompt section "${id}" is not registered`);
+  }
+  await runScript("put('personas',[{id:'p1',name:'Wren',bio:'A tired archivist.'}])", 'smoke:persona');
+  const st = await runScript("get('settings')", 'smoke:settings') || {};
+  st.activePersonaId = 'p1';
+  await runScript(`put('settings',${JSON.stringify(st)})`, 'smoke:settings2');
+
+  lastRequest = null;
+  $('#forgeText').value = 'Meet me at the lighthouse.';
+  $('#forgeSend').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+  await tick(300);
+  if (!lastRequest) throw new Error('no provider request was captured');
+  const sys = lastRequest.messages.find(m => m.role === 'system').content;
+  const count = needle => sys.split(needle).length - 1;
+  if (count('[PERSISTENT MEMORY') !== 1) throw new Error(`memory block appears ${count('[PERSISTENT MEMORY')} times`);
+  if (count('[CURRENT CHARACTER STATE') !== 1) throw new Error('character state block is missing or duplicated');
+  if (count("[THE USER'S PERSONA") !== 1) throw new Error('persona was not injected');
+  if (!sys.includes('Wren')) throw new Error('persona name missing from the prompt');
+  if (!sys.includes('lighthouse')) throw new Error('relevant memory was not injected into the prompt');
+  if (count('[CHARACTER PROFILE]') > 1) throw new Error('character profile duplicated in the prompt');
+  if (count('Curious and blunt.') > 1) throw new Error('personality text duplicated in the prompt');
+  if (sys.includes('SAVED MEMORY')) throw new Error('legacy unbounded memory dump is still in the prompt');
+  if (count('spreadsheets') > 0) throw new Error('irrelevant memory was injected — the budget/ranking is not being applied');
+  if (sys.length > 6000) throw new Error(`system prompt is ${sys.length} chars — too heavy for free models`);
+});
+
+await step('backup export and import round trip', async () => {
+  const before = await runScript("get('characters')", 'smoke:before');
+  const payload = { app: 'nightshade-forge', version: 2, data: { characters: [{ id: 'imported-1', name: 'Restored Soul', personality: 'Quiet.', memory: [] }] } };
+  const merged = [...before, ...payload.data.characters];
+  await runScript(`put('characters',${JSON.stringify(merged)})`, 'smoke:import');
+  const after = await runScript("get('characters')", 'smoke:after');
+  if (!after.some(c => c.id === 'imported-1')) throw new Error('merge import lost the restored character');
+  window.state.tab = 'vault';
+  await window.render();
+  await tick(80);
+  if (!$('#importBackup')) throw new Error('vault is missing the import control');
+  if (!$('#export')) throw new Error('vault is missing the export control');
+  await runScript(`put('characters',${JSON.stringify(before)})`, 'smoke:restore');
 });
 
 /* ------------------------------------------------------------------ *

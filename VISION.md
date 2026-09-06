@@ -138,9 +138,9 @@ host — all optional integrations. None of them is the home.
 | 18+ age gate | ✅ | `app.js` | — |
 | PIN lock (salted SHA-256, raw PIN never stored) | ✅ | `app.js` | — |
 | Local-first storage (IndexedDB vault) | ✅ | `app.js` | — |
-| Export backup / delete everything | ✅ | `app.js` (Vault tab) | Export skips voices, lorebooks, media projects and character state |
+| Export backup / delete everything | ✅ | `app.js` (Vault tab) | Now exports every vault section; the API key is deliberately excluded |
 | **Encryption at rest** | ⬜ | — | The PIN is a *door*, not a *safe*. Anyone with devtools or the disk can read the vault in plaintext |
-| Import a backup | ⬜ | — | Export exists; there's no import path back in |
+| Import a backup | ✅ | `app.js` (Vault tab) | Merge or replace; arrays de-duplicated by id |
 
 ### Characters
 
@@ -162,11 +162,11 @@ host — all optional integrations. None of them is the home.
 | Ask | Status | Where | Gap |
 |---|---|---|---|
 | Manual memories per character | ✅ | `forge-pass2.js` (Memory button) | — |
-| Auto-extracted memories | 🟡 | `autonomy-memory.js` | Five regexes only: *my name is / i like / i hate / my favorite / remember that* |
-| Relevance-ranked injection | 🟡 | `autonomy-memory.js` | Word-overlap counting against the last 8 messages — not embeddings |
-| **Semantic retrieval** | ⬜ | — | No embeddings, no vector store, no scoring beyond substring matches |
-| **Memory types** (fact vs event vs pinned vs relationship vs plot) | ⬜ | — | One flat `memory[]` array per character; `type:'auto'` is the only distinction |
-| Memory manager UI (view / edit / pin / delete) | ⬜ | — | Memories can be added by prompt and never seen again |
+| Auto-extracted memories | 🟡 | `autonomy-memory.js` | Eight patterns now (adds work/live, fears, open threads) and each is typed. Still regex, not comprehension |
+| Relevance-ranked injection | ✅ | `nf-core.js` | idf-weighted term matching + type weighting + recency tie-break, budgeted to ~1800 chars. Free and offline |
+| **Semantic retrieval** | 🟡 | `nf-core.js` | Ranking is lexical, so synonyms still miss. True embeddings need a model — free locally via Ollama, so this is a later opt-in |
+| **Memory types** (fact vs event vs pinned vs relationship vs plot) | ✅ | `nf-core.js` | `fact · event · relationship · plot · world · preference`, plus pinning. Legacy strings migrated automatically |
+| Memory manager UI (view / edit / pin / delete) | ✅ | `memory-studio.js` | Search, add, type, pin, edit, delete, export. Opens from the ✦ button in chat |
 | Conversation-scoped memory | 🟡 | `conversation.memory[]` exists | Nothing writes to it |
 
 ### Character state
@@ -247,7 +247,7 @@ host — all optional integrations. None of them is the home.
 | Media Lab: load audio/video/images, play, seek, mute original | ✅ | `media-studio.js` | Was entirely dead (syntax error) until this week |
 | Beat-reactive visualizers (spectrum, pulse, orbit, lyrics, nebula) | ✅ | `media-studio.js` | — |
 | Lyrics overlay timed to playback | ✅ | `media-studio.js` | Naive even-split timing, no real sync |
-| Record the visualization and download `.webm` | ✅ | `media-studio.js` | **Video-only** — the recording has no audio track |
+| Record the visualization and download `.webm` | ✅ | `media-studio.js` | Now records **audio + video** by mixing the analyser output into the canvas stream |
 | Save/load media projects | 🟡 | `media-studio.js` | Saves file *metadata*, not the audio itself, so a reloaded project has no sound |
 | Replacement soundtrack mixing | 🟡 | `media-studio.js` | The UI exists; the second track is loaded but never actually mixed into playback |
 | **Image generation** | ⬜ | — | Nothing. No provider, no gallery, no attachment to characters |
@@ -274,7 +274,7 @@ host — all optional integrations. None of them is the home.
 | 🌐 Web search / crawl | ⬜ | An "Abilities" screen has a `web` toggle that saves a boolean and does nothing |
 | 🧩 Tools / skills / MCP | ⬜ | Same — an `mcp` checkbox with no engine behind it |
 | 📎 Attachments used in conversation | 🟡 | Files can be stored (`capability-studio.js`) but are never sent to the model |
-| 👤 Personas (who *you* are in the scene) | 🟡 | Personas can be created but are never injected into any prompt |
+| 👤 Personas (who *you* are in the scene) | ✅ | "Play as this persona" on the Personas tab; injected as its own prompt section |
 
 ---
 
@@ -287,14 +287,16 @@ rest of the vision can be built.
   previous one's render function. It works, but load order silently decides who
   wins: `forge-studio.js` owns the Voices tab, so the voice UIs in
   `voice-library.js` and `capability-studio.js` are unreachable dead code.
-- **4 separate `window.fetch` monkey-patches** build the system prompt
-  (`prompt-context.js`, `autonomy-memory.js`, `character-state.js`,
-  `forge-enhancements.js`). Nothing owns the prompt; it's assembled by four
-  interceptors that can't see each other. A fifth (in `autonomy-bridge.js`) was
-  duplicating the memory block and has been removed.
-- **Duplicate data stores.** Voices live under three keys, lorebooks under
-  three, and character-card import is implemented three times. Data written by
-  one screen is invisible to another.
+- ~~4 separate `window.fetch` monkey-patches~~ **Fixed.** `nf-core.js` now owns
+  the single interceptor and modules register named sections
+  (`character`, `persona`, `assignedLorebooks`, `state`, `memory`) with
+  priorities. Four call sites were also dumping *every* memory into the prompt
+  unbounded; that is gone, which matters a lot on free models with small
+  context windows.
+- **Duplicate data stores.** `nf-core.js` migrates the stray `voices` /
+  `voiceLibrary` / `lorebooks` keys into the canonical stores on first load, so
+  nothing is stranded. The redundant *screens* still exist as dead code and
+  should be deleted; character-card import is still implemented three times.
 - **No build step, no modules, no tests until now.** A single stray brace took
   out the entire Media Lab and the entire autonomy engine, silently, for weeks —
   which is exactly what `npm test` now catches.
@@ -308,15 +310,16 @@ that owns rendering. Everything in Part 4 gets dramatically cheaper afterward.
 ## Part 4 — Suggested build order
 
 **Now — make what exists trustworthy**
-1. Unify the three voice stores and three lorebook stores; delete the dead UIs.
-2. One prompt builder replacing the four fetch patches.
-3. Backup **import**, and include voices/lore/state/media in the export.
+1. ✅ Unified the voice and lorebook stores (auto-migration). *Still to do: delete the dead screens.*
+2. ✅ One prompt builder (`nf-core.js`) replacing the four fetch patches.
+3. ✅ Backup import, and a complete export.
 
 **Next — the memory upgrade you actually asked for**
-4. Typed memories: `fact` · `event` · `pinned` · `relationship` · `plot` · `world`.
-5. A memory manager screen — see, edit, pin, delete, and watch what the character knows.
-6. Semantic retrieval (embeddings via the same OpenAI-compatible endpoint, cosine ranking, top-k) replacing keyword overlap.
+4. ✅ Typed memories: `fact` · `event` · `relationship` · `plot` · `world` · `preference`, plus pinning.
+5. ✅ Memory Studio — see, edit, pin, delete, search and export what a character knows.
+6. ✅ Ranked retrieval (idf + type weight + recency, budgeted). Embedding-based retrieval stays optional and free via a local model later.
 7. Model-driven state deltas: after each reply, ask for a compact JSON patch of mood/relationship/goals/threads instead of matching keywords. Add numeric trust/affection so repair is gradual.
+8. Encryption at rest derived from the PIN — free, but needs a careful migration so nobody is locked out of their own characters.
 
 **Then — worlds**
 8. Scenes & Stories as real objects: a scene has a location, cast, active plot threads and its own memory; conversations belong to scenes.
