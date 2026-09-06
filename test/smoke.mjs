@@ -183,12 +183,21 @@ for (const tab of ['home', 'chars', 'create', 'vault', 'settings', 'provider', '
 await step('open chat', async () => {
   const chars = await runScript("get('characters')", 'smoke:get-characters');
   if (!chars || !chars.length) throw new Error('character was not saved');
+  chars[0].card = { alternateGreetings: ['A different opening, chosen on purpose.'] };
+  await runScript(`put('characters', ${JSON.stringify(chars)})`, 'smoke:alternate-greeting');
   window.state.tab = 'chat';
   window.state.chat = chars[0].id;
   await window.render();
   await tick(120);
   if (!$('.messages')) throw new Error('chat transcript did not render');
   if (!$('#forgeSend')) throw new Error('composer did not render');
+  const option = $('.nf-opening-option');
+  if (!option) throw new Error('alternate greeting choices did not render');
+  option.click();
+  await tick(80);
+  const convs = await runScript("get('conversations')", 'smoke:opening-conversation');
+  const opening = convs.find(c => c.characterId === window.state.chat)?.messages?.[0];
+  if (!opening?.openingGreeting) throw new Error('selected opening was not stored in the conversation');
 });
 
 await step('lock screen', async () => {
@@ -254,7 +263,7 @@ await step('one control per action on a message', async () => {
   if (branch !== 1) throw new Error(`${branch} branch buttons on one message: ${labels.join(' ')}`);
   if (window.document.querySelectorAll('#nfBranchBar, #branchPicker').length !== 1) throw new Error('duplicate branch bars above the transcript');
   const variants = await runScript("get('conversations')", 'smoke:variants');
-  const msg = variants.find(c => c.characterId === window.state.chat).messages.find(m => m.role === 'assistant');
+  const msg = variants.find(c => c.characterId === window.state.chat).messages.find(m => Array.isArray(m.variants));
   if (!Array.isArray(msg.variants)) throw new Error('regeneration did not keep the previous response as a variant');
 });
 
