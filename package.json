@@ -4,5 +4,13 @@
   "version": "1.0.0",
   "dependencies": {
     "@vercel/blob": "^2.4.0"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^25.0.1"
+  },
+  "scripts": {
+    "check": "for f in *.js api/*.js; do node --check \"$f\" || exit 1; done",
+    "test": "node test/smoke.mjs"
   }
 }

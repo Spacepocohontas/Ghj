@@ -34,3 +34,28 @@ Tiny troubleshooting
 - Error in the app? Tell me what the browser shows and I will help.
 
 If you want, I can keep this short README exactly like this in your repo. I just added it so anyone can run the app easily.
+
+---
+
+## For developers
+
+The app is plain HTML/CSS/JS with no build step — `index.html` loads each script
+in order and every module layers itself on top of `window.render`.
+`api/` holds the Vercel serverless functions (ElevenLabs TTS bridge, voice
+cloning, and presigned Blob uploads for voice samples).
+
+Checks before pushing:
+
+```bash
+npm install     # jsdom + fake-indexeddb, used only by the tests
+npm run check   # parse every browser and API script
+npm test        # boot index.html in jsdom and walk every screen
+```
+
+`npm test` loads the real `index.html` with the real script order, then clicks
+through the age gate, PIN setup, character creation, every tab, a chat round
+trip, branching/regeneration, and the lock screen. Any uncaught exception,
+unhandled rejection, or app-level console error fails the run, so a syntax error
+or a broken screen is caught before it reaches the browser. The same two
+commands run in CI (`.github/workflows/ci.yml`); `.github/workflows/static.yml`
+publishes the site to GitHub Pages.
