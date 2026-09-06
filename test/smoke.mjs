@@ -108,7 +108,8 @@ window.addEventListener('error', e => fail('window.onerror', e.error || e.messag
 window.addEventListener('unhandledrejection', e => fail('unhandledrejection', e.reason));
 const realWarn = window.console.warn;
 window.console.error = (...a) => fail('console.error', a.join(' '));
-window.console.warn = (...a) => { if (/Nightshade/i.test(a.join(' '))) fail('console.warn', a.join(' ')); else realWarn(...a) };
+globalThis.expectedWarn = null;
+window.console.warn = (...a) => { const m = a.join(' '); if (globalThis.expectedWarn && globalThis.expectedWarn.test(m)) return; if (/Nightshade/i.test(m)) fail('console.warn', m); else realWarn(...a) };
 
 /* --- load the app scripts in document order -----------------------
  * Run them as real classic scripts in the window's VM context so that
@@ -229,11 +230,11 @@ await step('provider + chat round trip', async () => {
 
 await step('branch + regenerate terminate', async () => {
   const before = fetchCalls;
-  const branch = [...window.document.querySelectorAll('[data-branch]')].pop();
+  const branch = [...window.document.querySelectorAll('.nf-start-branch')].pop();
   if (!branch) throw new Error('branch control missing');
   branch.click();
   await tick(250);
-  const regen = [...window.document.querySelectorAll('[data-regen]')].pop();
+  const regen = [...window.document.querySelectorAll('[data-regenerate]')].pop();
   if (!regen) throw new Error('regenerate control missing');
   regen.click();
   await tick(400);
@@ -241,6 +242,20 @@ await step('branch + regenerate terminate', async () => {
   if (fetchCalls - before > 6) throw new Error(`regenerate looped (${fetchCalls - before} provider calls)`);
   const convs = await runScript("get('conversations')", 'smoke:branches');
   if (convs.length < 2) throw new Error('branch conversation was not created');
+});
+
+await step('one control per action on a message', async () => {
+  const meta = window.document.querySelector('.messages .bubble.theirs .bubblemeta');
+  if (!meta) throw new Error('assistant message toolbar missing');
+  const labels = [...meta.querySelectorAll('button')].map(b => b.textContent.trim());
+  const regen = labels.filter(t => t.includes('↻')).length;
+  const branch = labels.filter(t => t.includes('⑂') || t.includes('↶')).length;
+  if (regen !== 1) throw new Error(`${regen} regenerate buttons on one message: ${labels.join(' ')}`);
+  if (branch !== 1) throw new Error(`${branch} branch buttons on one message: ${labels.join(' ')}`);
+  if (window.document.querySelectorAll('#nfBranchBar, #branchPicker').length !== 1) throw new Error('duplicate branch bars above the transcript');
+  const variants = await runScript("get('conversations')", 'smoke:variants');
+  const msg = variants.find(c => c.characterId === window.state.chat).messages.find(m => m.role === 'assistant');
+  if (!Array.isArray(msg.variants)) throw new Error('regeneration did not keep the previous response as a variant');
 });
 
 
@@ -325,6 +340,134 @@ await step('backup export and import round trip', async () => {
   if (!$('#importBackup')) throw new Error('vault is missing the import control');
   if (!$('#export')) throw new Error('vault is missing the export control');
   await runScript(`put('characters',${JSON.stringify(before)})`, 'smoke:restore');
+});
+
+await step('bond moves gradually and the model pass applies patches', async () => {
+  const id = window.state.chat;
+  window.state.tab = 'chat';
+  await window.render();
+  await tick(80);
+  const start = await runScript(`nfCharacterState.stateFor(${JSON.stringify(id)})`, 'smoke:state0');
+  if (typeof start.trust !== 'number') throw new Error('numeric bond missing from character state');
+
+  // hostile line should damage trust; an apology should soften, not reset
+  await runScript(`nfCharacterState.evolve(${JSON.stringify(id)},{role:'user',text:'I hate you, you lied to me and betrayed me.'})`, 'smoke:hostile');
+  const hurt = await runScript(`nfCharacterState.stateFor(${JSON.stringify(id)})`, 'smoke:state1');
+  if (hurt.trust >= start.trust) throw new Error(`trust did not drop (was ${start.trust}, now ${hurt.trust})`);
+  await runScript(`nfCharacterState.evolve(${JSON.stringify(id)},{role:'user',text:'I am sorry, please forgive me.'})`, 'smoke:sorry');
+  const healing = await runScript(`nfCharacterState.stateFor(${JSON.stringify(id)})`, 'smoke:state2');
+  if (healing.trust <= hurt.trust) throw new Error('apology did not begin repairing trust');
+  if (healing.trust >= start.trust) throw new Error('apology instantly reset trust — repair should be gradual');
+
+  // model-driven patch
+  await runScript(`nfCharacterState.applyDelta(${JSON.stringify(id)},{mood:'Wary',relationship:'Rebuilding',trust_delta:5,affection_delta:-2,tension_delta:3,goals:['Reach the lighthouse'],plot_threads:['The promise is unresolved']})`, 'smoke:delta');
+  const patched = await runScript(`nfCharacterState.stateFor(${JSON.stringify(id)})`, 'smoke:state3');
+  if (patched.mood !== 'Wary' || patched.relationship !== 'Rebuilding') throw new Error('model state patch did not apply labels');
+  if (patched.trust !== Math.min(100, healing.trust + 5)) throw new Error('trust delta not applied correctly');
+  if (!patched.goals.includes('Reach the lighthouse')) throw new Error('goals not merged from the model patch');
+
+  // clamped, and hostile deltas cannot exceed the step limit
+  await runScript(`nfCharacterState.applyDelta(${JSON.stringify(id)},{trust_delta:9999})`, 'smoke:clamp');
+  const clamped = await runScript(`nfCharacterState.stateFor(${JSON.stringify(id)})`, 'smoke:state4');
+  if (clamped.trust > Math.min(100, patched.trust + 10)) throw new Error('delta step limit not enforced');
+
+  // the bond reaches the prompt
+  lastRequest = null;
+  $('#forgeText').value = 'Are we alright?';
+  $('#forgeSend').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+  await tick(300);
+  const sys = lastRequest.messages.find(m => m.role === 'system').content;
+  if (!/Trust \d+\/100/.test(sys)) throw new Error('numeric bond is not in the prompt');
+});
+
+await step('internal state requests are not decorated', async () => {
+  const before = lastRequest;
+  await runScript("fetch('https://example.test/v1/chat/completions',{method:'POST',headers:{'X-NF-Internal':'state'},body:JSON.stringify({messages:[{role:'system',content:'tracker'}]})})", 'smoke:internal');
+  await tick(80);
+  const sys = lastRequest.messages.find(m => m.role === 'system').content;
+  if (sys !== 'tracker') throw new Error('the internal state request was padded with the full prompt: ' + sys.slice(0, 120));
+  lastRequest = before;
+});
+
+await step('vault encryption: seal, lock, unlock, rekey', async () => {
+  window.state.tab = 'settings';
+  await window.render();
+  await tick(80);
+  if (!$('#toggleEncryption')) throw new Error('encryption control missing from Settings');
+
+  const secret = 'Nightshade secret phrase ' + Date.now();
+  await runScript(`put('characters',[{id:'enc-1',name:${JSON.stringify(secret)},personality:'hidden',memory:[]}])`, 'smoke:enc-seed');
+
+  // plaintext today: the raw record is readable straight off the store
+  let raw = await runScript("nfVault.rawGet('characters')", 'smoke:raw0');
+  if (!JSON.stringify(raw).includes(secret)) throw new Error('test setup failed — secret not stored');
+
+  const count = await runScript("nfVault.enable('1234')", 'smoke:enable');
+  if (!count) throw new Error('nothing was encrypted');
+
+  raw = await runScript("nfVault.rawGet('characters')", 'smoke:raw1');
+  if (JSON.stringify(raw).includes(secret)) throw new Error('data is still readable in the raw store after encrypting');
+  if (!raw || raw.__nfEnc !== 1 || !raw.iv || !raw.ct) throw new Error('record is not a sealed envelope');
+  const rawSec = await runScript("nfVault.rawGet('security')", 'smoke:rawsec');
+  if (!rawSec.encrypted) throw new Error('encryption flag not persisted');
+  if (rawSec.verifier === '1234') throw new Error('PIN stored in the clear');
+
+  // still transparent to the app while unlocked
+  let cs = await runScript("get('characters')", 'smoke:read1');
+  if (cs[0].name !== secret) throw new Error('encrypted data is not readable while unlocked');
+
+  // simulate a reload: the key lives only in memory
+  await runScript('nfVault.lock()', 'smoke:lock');
+  globalThis.expectedWarn = /vault is locked/i;
+  cs = await runScript("get('characters')", 'smoke:read2');
+  if (cs !== undefined) throw new Error('encrypted data was readable with no key');
+
+  if (await runScript("nfVault.unlock('9999')", 'smoke:badpin')) throw new Error('the wrong PIN unlocked the vault');
+  if (!(await runScript("nfVault.unlock('1234')", 'smoke:goodpin'))) throw new Error('the correct PIN did not unlock the vault');
+  cs = await runScript("get('characters')", 'smoke:read3');
+  if (cs[0].name !== secret) throw new Error('data unreadable after unlocking');
+
+  // writes stay sealed
+  await runScript("put('settings',{probe:'still-secret'})", 'smoke:write');
+  const rawSettings = await runScript("nfVault.rawGet('settings')", 'smoke:raw2');
+  if (JSON.stringify(rawSettings).includes('still-secret')) throw new Error('new writes are not being encrypted');
+
+  // a locked vault must force the PIN screen instead of leaking a blank app
+  await runScript('nfVault.lock()', 'smoke:lock2');
+  window.sessionStorage.removeItem('nf_unlocked');
+  window.state.locked = true;
+  window.state.tab = 'home';
+  await window.render();
+  await tick(80);
+  if (!$('#unlockBtn')) throw new Error('encrypted + locked did not show the unlock screen');
+  await runScript("nfVault.unlock('1234')", 'smoke:relock');
+  window.sessionStorage.setItem('nf_unlocked', '1');
+  window.state.locked = false;
+
+  // changing the PIN must re-key, not orphan, the encrypted data
+  window.state.tab = 'settings';
+  await window.render();
+  await tick(60);
+  const realPrompt = window.prompt, realAlert = window.alert;
+  const answers = ['1234', '4321'];
+  window.prompt = () => answers.shift();
+  window.alert = () => {};
+  $('#changePin').click();
+  await tick(400);
+  window.prompt = realPrompt; window.alert = realAlert;
+  await runScript('nfVault.lock()', 'smoke:lock3');
+  if (await runScript("nfVault.unlock('1234')", 'smoke:oldpin')) throw new Error('the old PIN still opens the vault after a PIN change');
+  if (!(await runScript("nfVault.unlock('4321')", 'smoke:newpin'))) throw new Error('the new PIN does not open the vault — data would be lost');
+  cs = await runScript("get('characters')", 'smoke:read4');
+  if (!cs || cs[0].name !== secret) throw new Error('data unreadable after a PIN change');
+
+  // turning it back off restores plaintext
+  const dec = await runScript("nfVault.disable('4321')", 'smoke:disable');
+  if (!dec) throw new Error('nothing was decrypted');
+  raw = await runScript("nfVault.rawGet('characters')", 'smoke:raw3');
+  if (!JSON.stringify(raw).includes(secret)) throw new Error('disabling encryption did not restore readable data');
+  if (raw.__nfEnc) throw new Error('records still sealed after disabling');
+  globalThis.expectedWarn = null;
 });
 
 /* ------------------------------------------------------------------ *

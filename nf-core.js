@@ -228,7 +228,8 @@ function looksLikeChat(body) {
 const nativeFetch = window.fetch.bind(window);
 window.fetch = async function (input, init) {
   try {
-    if (init && looksLikeChat(init.body)) {
+    const internal = init && init.headers && (init.headers['X-NF-Internal'] || init.headers['x-nf-internal']);
+    if (!internal && init && looksLikeChat(init.body)) {
       const req = JSON.parse(init.body);
       if (Array.isArray(req.messages) && req.messages.length) {
         const characterId = window.state?.chat || null;
