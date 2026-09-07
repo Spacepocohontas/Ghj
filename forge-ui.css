@@ -8,3 +8,7 @@ html,body,#app{width:100%;min-height:100%;margin:0}body{overflow-x:hidden}button
 @media(max-width:520px){.nf-bubble-avatar{width:25px;height:25px;flex-basis:25px}.nf-msgrow{gap:5px}.nf-variants{margin-right:2px}.bubblemeta{font-size:9px}.nf-branchbar{padding-left:8px;padding-right:8px}.nf-chatcard{padding:10px 6px}.nf-chat-avatar{width:44px;height:44px;flex-basis:44px}}
 @media(min-width:700px){.shell{padding:24px 24px 92px}.nav{left:50%;right:auto;transform:translateX(-50%);width:min(720px,calc(100% - 28px));border:1px solid #332735;border-bottom:0;border-radius:18px 18px 0 0}.chathead{padding-left:max(16px,calc((100% - 900px)/2));padding-right:max(16px,calc((100% - 900px)/2))}.chat-shell>.card{margin-left:auto!important;margin-right:auto!important;width:min(900px,calc(100% - 24px))}.messages{padding-left:calc((100% - 900px)/2);padding-right:calc((100% - 900px)/2)}}
 @media(max-width:420px){.shell{padding-left:10px;padding-right:10px}.card{padding:13px}.bubble{max-width:86%;font-size:14px;padding:9px 12px}.chat-shell>.card .row .btn{flex:1}.chat-shell>.card .row{display:flex}.brand{font-size:11px}.nf-chatsearch{margin-left:0;margin-right:0}}
+
+/* Regeneration updates the existing bubble in place; never flash/re-mount the whole chat. */
+.nf-regenerated{animation:none!important}
+.nf-msgrow{animation:none}
