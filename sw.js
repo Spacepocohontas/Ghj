@@ -9,5 +9,5 @@ self.addEventListener('fetch',event=>{
   event.respondWith(fetch(event.request).then(response=>{
     if(response.ok){const copy=response.clone();caches.open(CACHE).then(c=>c.put(event.request,copy));}
     return response;
-  }).catch(()=>caches.match(event.request).then(r=>r||caches.match('./index.html))));
+  }).catch(()=>caches.match(event.request).then(r=>r||caches.match('./index.html'))));
 });
