@@ -1,0 +1,11 @@
+{
+  "name": "Nightshade Forge",
+  "short_name": "Nightshade Forge",
+  "description": "Private local-first creative studio for characters, conversations, memory, voices and media.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#09070b",
+  "theme_color": "#09070b",
+  "icons": []
+}
