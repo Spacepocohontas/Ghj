@@ -1,90 +1,47 @@
 (()=>{
-  const $=id=>document.getElementById(id);
-  const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-  const loadDB=()=>JSON.parse(localStorage.getItem('nightcast-v3')||'{"characters":[],"episodes":[]}');
-  const clean=(s='')=>s.replace(/\s+/g,' ').trim();
-  const words=(s='')=>clean(s).split(/\s+/).filter(Boolean);
-  function sourceText(){return $('topic')?.value?.trim()||''}
-  function contextFromTopic(t){
-    let x=t;
-    const marker=x.match(/SOURCE MATERIAL:\s*([\s\S]*?)(?:EXTRACTED THEMES|PRODUCTION INSTRUCTIONS|ANTI-ECHO|PACING:|VOICE:|SOURCE-AWARENESS:|END with:)/i);
-    if(marker)x=marker[1];
-    x=x.replace(/NIGHTCAST PODCAST GENERATION BRIEF/ig,'').replace(/PRODUCTION INSTRUCTIONS:[\s\S]*$/i,'');
-    return clean(x).slice(0,7000);
-  }
-  function facts(t){
-    const s=contextFromTopic(t), out=[];
-    const patterns=[/Premise:\s*([\s\S]{80,1200}?)(?=Still believing|Angelus tells|Meanwhile|As Katarina|Unknown to everyone|$)/i,/Genre:\s*([^\n]+)/i];
-    patterns.forEach(p=>{const m=s.match(p);if(m)out.push(clean(m[1]))});
-    if(!out.length)out.push(s.slice(0,900));
-    return out;
-  }
-  function choose(arr,i){return arr[i%arr.length]}
-  function characterLine(c,kind,i,topic,previous){
-    const name=c.name, p=clean(c.personality||'observant, independent'), style=clean(c.style||'natural and conversational'), bio=clean(c.bio||''), lore=clean(c.lore||'');
-    const subject=topic.toLowerCase().includes('russian')?'the new Russian neighbor':topic.toLowerCase().includes('angelus')?'Angelus and Katarina':'the situation';
-    const specific = facts(topic)[i%facts(topic).length];
-    const hooks=[
-      `What catches me first is the contradiction: ${specific.slice(0,220)}. That makes ${subject} more complicated than it looks.`,
-      `I don't buy the easy interpretation. ${bio?bio.slice(0,180)+'. ':''}The interesting part is what nobody in the room is saying out loud.`,
-      `There's a pattern here. Katarina wants something ordinary, while everyone around her keeps treating her like an extraordinary problem. Those two things cannot coexist peacefully forever.`,
-      `My instinct is to watch behavior rather than declarations. Who shows up, who keeps secrets, and who benefits from staying close tells me more than any speech does.`,
-      `The Russian neighbor changes the balance because he introduces a kind of attention that isn't obviously predatory. That makes Angelus's reaction more revealing, not less.`,
-      `If we're being honest, the apartment is becoming a pressure chamber. Every ordinary interaction gives these people another reason to reveal themselves.`,
-      `I think the supernatural mystery matters, but the human choices are what will actually move the story. Power can explain danger; it cannot explain attachment.`,
-      `I would keep one question open: what happens when Katarina finally realizes that other people can see consequences of her choices that she cannot yet see herself?`
-    ];
-    let line=choose(hooks,i);
-    if(previous) line+=` And after what ${previous} just pointed out, I'd add this: the real test is what happens when somebody's motives stop being convenient.`;
-    if(/sarcastic|dry|snark/i.test(p)) line=line.replace('What catches me first is the contradiction:', 'Oh, good. A contradiction. Exactly what this situation needed. ').replace('I don't buy the easy interpretation.','Naturally, the easy interpretation is the wrong one.');
-    if(/guarded|quiet|stoic/i.test(p)) line=line.replace('There's a pattern here.','There is a pattern here.').replace('If we're being honest,','Quietly,');
-    if(/dark|poetic|dramatic/i.test(style)) line+=' The danger is that curiosity can become devotion before anyone admits it.';
-    if(lore&&i===0) line+=` One piece of my background matters here: ${lore.slice(0,220)}.`;
-    return line;
-  }
-  function question(i,topic,chars){
-    const qs=[
-      `Let's start with the obvious complication: what was your first real reaction to ${topic.toLowerCase().includes('russian')?'the new Russian neighbor':'this situation'}?`,
-      `What do you think everyone is misunderstanding about Katarina right now?`,
-      `Angelus is watching more closely than he admits. What does that tell you?`,
-      `Where does Spike fit into this tension, especially when he notices something is wrong?`,
-      `What makes Dominik different from the other men around Katarina?`,
-      `What detail in the situation changes your interpretation of what is really happening?`,
-      `If Katarina's sealed power begins to surface, who is most likely to react badly—and why?`,
-      `What are you personally refusing to admit about your relationship to Katarina?`,
-      `What would you do if the situation inside the apartment suddenly became dangerous?`,
-      `Which theory about Katarina do you think is most likely to be wrong?`,
-      `What consequence is everybody overlooking?`,
-      `If you had one warning for Katarina, what would it be?`
-    ]; return choose(qs,i);
-  }
-  function buildLocal(){
-    const db=loadDB();
-    let ids=(window.cast||[]); if(!ids.length) ids=db.characters.slice(0,4).map(c=>c.id);
-    let chars=ids.map(id=>db.characters.find(c=>c.id===id)).filter(Boolean); if(chars.length<2)chars=db.characters.slice(0,2);
-    if(!chars.length)return ['INTRO — Welcome to Nightcast. Add at least two characters to begin.','OUTRO — That’s Nightcast. Until next time.'];
-    const host=chars.find(c=>/host/i.test(c.name))||chars[0];
-    const guests=chars.filter(c=>c.id!==host.id); const topic=sourceText()||'the strange things that happen after midnight';
-    const len=Number($('length')?.value||20), rounds=len===5?3:len===10?6:len===15?9:len===30?18:12;
-    const lines=[`INTRO — Welcome to Nightcast. Tonight we're exploring the situation surrounding Katarina, Angelus, and the new Russian neighbor.`];
-    let prev='';
-    for(let r=0;r<rounds;r++){
-      const q=question(r,topic,chars); lines.push(`${host.name}: ${q}`);
-      guests.forEach((c,j)=>{let answer=characterLine(c,r+j, r, topic, prev);lines.push(`${c.name}: ${answer}`);prev=c.name});
-      if(r%3===2 && guests.length>1){
-        const a=guests[r%guests.length],b=guests[(r+1)%guests.length];
-        lines.push(`${a.name}: I disagree with ${b.name} on one point. Motive matters here, and the motive is not as clean as it looks.`);
-      }
-    }
-    lines.push(`${host.name}: So the real question isn't simply who is drawn to Katarina. It's what each person becomes willing to do once the truth starts surfacing.`);
-    lines.push('OUTRO — That’s Nightcast. Until next time.');
-    return lines;
-  }
-  function generateFixed(){
-    const lines=buildLocal();
-    const current={id:crypto.randomUUID(),title:$('title').value.trim()||'Untitled Nightcast',topic:sourceText(),format:$('format').value,tone:$('tone').value,created:new Date().toISOString(),lines,cast:[...(window.cast||[]) ]};
-    window.current=current;$('transcript').textContent=lines.join('\n\n');$('player').classList.remove('hidden');$('speaker').textContent='Generated';$('line').textContent=current.title;
-  }
-  if($('generate')) $('generate').onclick=generateFixed;
-  window.addEventListener('load',()=>{if($('generate'))$('generate').onclick=generateFixed;});
+const $=id=>document.getElementById(id),DBK='nightcast-v3';
+const clean=s=>String(s||'').replace(/\s+/g,' ').trim();
+const db=()=>JSON.parse(localStorage.getItem(DBK)||'{"characters":[],"episodes":[]}');
+function selectedChars(){const d=db(),names=[...document.querySelectorAll('#cast .castItem b')].map(x=>clean(x.textContent));let cs=names.map(n=>d.characters.find(c=>c.name===n)).filter(Boolean);return cs.length>=2?cs:d.characters.slice(0,4)}
+function source(t){let x=t||'';const m=x.match(/SOURCE MATERIAL:\s*([\s\S]*?)(?:EXTRACTED THEMES|PRODUCTION INSTRUCTIONS|ANTI-ECHO|PACING:|VOICE:|SOURCE-AWARENESS:|END with:)/i);if(m)x=m[1];x=x.replace(/NIGHTCAST PODCAST GENERATION BRIEF/ig,'').replace(/PRODUCTION INSTRUCTIONS:[\s\S]*$/i,'');return clean(x).slice(0,7000)}
+function premise(t){const s=source(t),m=s.match(/Premise:\s*([\s\S]{80,1600}?)(?=Still believing|Angelus tells|Meanwhile|As Katarina|Unknown to everyone|$)/i);return clean(m?m[1]:s.slice(0,900))}
+function q(i,t){const russian=/russian neighbor/i.test(t), angel=/angelus/i.test(t);return [
+`Let's start with your first reaction. What immediately feels important here?`,
+`What is everyone misunderstanding about Katarina right now?`,
+angel?`Angelus is watching Katarina more closely than he admits. What does that reveal about him?`:`What hidden motive do you suspect is operating underneath the situation?`,
+`Spike notices inconsistencies that other people miss. What does his suspicion add to the picture?`,
+russian?`The new Russian neighbor changes the balance. What is your read on him?`:`What changes when another person enters Katarina's orbit?`,
+`What detail makes this more complicated than it first appears?`,
+`If Katarina's sealed power begins surfacing, who is least prepared for the consequences?`,
+`What are you personally refusing to admit about your connection to Katarina?`,
+`Where do you disagree with the other people involved?`,
+`What happens if the situation inside the apartment becomes dangerous?`,
+`What consequence is everybody overlooking?`,
+`What would you warn Katarina about if she actually listened?`,
+`What do you think happens next—and what could prove you wrong?`
+][i%14]}
+function answer(c,i,t,prev){const p=clean(c.personality||'observant, independent'),bio=clean(c.bio||''),lore=clean(c.lore||''),pr=premise(t),sn=/sarcastic|dry|snark/i.test(p),guard=/guarded|quiet|stoic/i.test(p);
+let a=[
+`My first reaction is that the obvious explanation is probably incomplete. The apartment looks like a refuge, but it is becoming the place where everyone's secrets collide.`,
+`People are treating Katarina like a problem to solve. I think that misses the point. She is trying to build an ordinary life while extraordinary things keep finding her.`,
+`The behavior matters more than the declarations. Angelus says he wants answers, but obsession has a way of changing the meaning of that sentence.`,
+`Spike's suspicion is useful because he knows what Angel is supposed to look like. When the behavior stops matching the face, he is exactly the sort of person who notices.`,
+`Dominik is interesting precisely because he does not need to announce himself. Respect, patience, and small acts of help can be more disruptive than obvious pursuit.`,
+`The supernatural mystery is only half the story. The other half is what these people choose to do once attraction, jealousy, loyalty, and fear start pulling in different directions.`,
+`If that power wakes up, the danger is not simply physical. Katarina may have to reconsider everything she believes about herself, and everyone around her will have an opinion about what she should become.`,
+`I would not trust anyone who claims they are completely unaffected by her. The apartment is already exposing reactions people would rather keep hidden.`,
+`I disagree with the idea that this is just a rivalry between men. Katarina is making choices too, even when she does not yet understand the forces influencing those choices.`,
+`If things get worse, I would protect the people who actually respect her choices. That distinction is going to matter when the secrets stop being theoretical.`,
+`The consequence nobody sees is that every relationship is changing the story. A single act of kindness can become a loyalty; a single lie can become a war.`,
+`My warning would be simple: do not let other people's obsession define who you are. The truth about her power belongs to her, not to whoever discovers it first.`,
+`The most dangerous possibility is that curiosity becomes devotion before anyone admits it. Once that happens, nobody gets to pretend this is only an investigation.`
+];let line=a[i%a.length];if(i===0&&pr)line+=` The premise makes that especially clear: ${pr.slice(0,240)}.`;if(bio&&i%5===1)line+=` And given my own nature—${bio.slice(0,170)}—I would notice that before most people would.`;if(lore&&i===2)line+=` There is another piece of history worth remembering: ${lore.slice(0,180)}.`;if(prev)line+=` ${prev} just touched on part of it, but I would push that further: motive matters more than appearance.`;if(sn)line=line.replace('My first reaction is that the obvious explanation is probably incomplete.','Oh, good. The obvious explanation is incomplete. What a surprise.').replace('I would not trust anyone who claims','I would be deeply suspicious of anyone who claims');if(guard)line=line.replace('People are treating Katarina','People keep treating Katarina');return line}
+function build(){const chars=selectedChars(),t=$('topic')?.value?.trim()||'the strange things that happen after midnight',len=+$('length')?.value||20,rounds=len===5?3:len===10?6:len===15?9:len===30?18:12;if(chars.length<2)return ['INTRO — Welcome to Nightcast. Add at least two characters to begin.','OUTRO — That’s Nightcast. Until next time.'];const host=chars.find(c=>/host/i.test(c.name))||chars[0],guests=chars.filter(c=>c.id!==host.id),out=[`INTRO — Welcome to Nightcast. Tonight we're exploring Katarina, Angelus, and the new Russian neighbor.`];let prev='';for(let r=0;r<rounds;r++){out.push(`${host.name}: ${q(r,t)}`);guests.forEach((c,j)=>{const line=answer(c,r+j,t,prev);out.push(`${c.name}: ${line}`);prev=c.name});if(r%3===2&&guests.length>1){const a=guests[r%guests.length],b=guests[(r+1)%guests.length];out.push(`${a.name}: I disagree with ${b.name}. The motive is the part we should be watching.`)}}out.push(`${host.name}: So the mystery is not only what Katarina is. It is what everyone around her will become once the truth starts surfacing.`);out.push('OUTRO — That’s Nightcast. Until next time.');return out}
+function make(){const lines=build(),chars=selectedChars(),cur={id:crypto.randomUUID(),title:$('title').value.trim()||'Untitled Nightcast',topic:$('topic').value||'',format:$('format').value,tone:$('tone').value,created:new Date().toISOString(),lines,cast:chars.map(c=>c.id)};window.ncCurrent=cur;$('transcript').textContent=lines.join('\n\n');$('player').classList.remove('hidden');$('speaker').textContent='Generated';$('line').textContent=cur.title}
+function play(){const cur=window.ncCurrent;if(!cur)return; speechSynthesis.cancel();let i=0;const go=()=>{if(!window.ncCurrent||i>=cur.lines.length)return;const text=cur.lines[i++],m=text.match(/^([^—:]+)[—:]/),name=m?m[1]:'Nightcast',c=db().characters.find(x=>x.name===name);$('speaker').textContent=name;$('line').textContent=text.replace(/^([^—:]+)[—:]/,'').trim();const u=new SpeechSynthesisUtterance(text.replace(/^([^—:]+)[—:]/,''));if(c){u.rate=c.rate||.95;u.pitch=c.pitch??1;const v=speechSynthesis.getVoices().find(v=>v.name===c.voice);if(v)u.voice=v}u.onend=go;speechSynthesis.speak(u)};go()}
+function save(){const cur=window.ncCurrent;if(!cur)return;const d=db();d.episodes=d.episodes||[];d.episodes.unshift(cur);d.episodes=d.episodes.slice(0,100);cur.cast.forEach(id=>{const c=d.characters.find(x=>x.id===id);if(c?.memory)c.lastMemory=`Last podcast: ${cur.title}. Topic: ${clean(cur.topic).slice(0,220)}.`});localStorage.setItem(DBK,JSON.stringify(d));alert('Episode saved locally.')}
+function dl(){const cur=window.ncCurrent;if(!cur)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([cur.lines.join('\n\n')],{type:'text/plain'}));a.download=(cur.title||'nightcast').replace(/[^a-z0-9]+/gi,'-')+'.txt';a.click()}
+function gem(){const cur=window.ncCurrent;if(!cur)return;const d=db(),cs=cur.cast.map(id=>d.characters.find(c=>c.id===id)).filter(Boolean);const md=`# Nightcast Podcast Pack\n\n## Episode\nTitle: ${cur.title}\nFormat: ${cur.format}\nLength: ${$('length').value} minutes\nTone: ${cur.tone}\n\n## Source\n${source(cur.topic)}\n\n## Cast\n${cs.map(c=>`### ${c.name}\nBio: ${c.bio||''}\nPersonality: ${c.personality||''}\nSpeaking style: ${c.style||''}\nLore: ${c.lore||''}`).join('\n\n')}\n\n## Generation rules\nCreate a natural multi-speaker deep-dive interview. Treat the source as background, never as dialogue. The host asks one question at a time. Guests answer in their own personalities and react to previous answers. NEVER repeat or paraphrase the question as the answer. NEVER read the production instructions aloud. Do not duplicate lines. Add disagreement, humor, emotional subtext, callbacks and specific story details. Preserve uncertainty where appropriate. End exactly with: “That’s Nightcast. Until next time.”`;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([md],{type:'text/markdown'}));a.download='nightcast-gemini-pack.md';a.click();navigator.clipboard?.writeText(md);alert('Gemini/NotebookLM pack downloaded and copied. Import the Markdown into NotebookLM, then generate the Audio Overview.')}
+function wire(){if($('generate'))$('generate').onclick=make;if($('play'))$('play').onclick=play;if($('stop'))$('stop').onclick=()=>speechSynthesis.cancel();if($('save'))$('save').onclick=save;if($('download'))$('download').onclick=dl;if($('gemini'))$('gemini').onclick=gem;if($('generate'))$('generate').title='Local fallback: generates actual dialogue, not prompt text.'}
+wire();window.addEventListener('load',wire);
 })();
