@@ -34,3 +34,59 @@ Tiny troubleshooting
 - Error in the app? Tell me what the browser shows and I will help.
 
 If you want, I can keep this short README exactly like this in your repo. I just added it so anyone can run the app easily.
+
+---
+
+## 🔐 Protecting API Keys & Secrets
+
+Never commit API keys, tokens, or credentials to this repository. Use **git-secrets** to prevent accidental leaks.
+
+### Setup git-secrets (one-time)
+
+**Install git-secrets:**
+```bash
+# macOS (Homebrew)
+brew install git-secrets
+
+# Ubuntu/Debian
+sudo apt-get install git-secrets
+
+# Or build from source
+git clone https://github.com/awslabs/git-secrets.git
+cd git-secrets
+sudo make install
+```
+
+**Initialize in this repository:**
+```bash
+git secrets --install
+```
+
+**Add secret patterns:**
+```bash
+# ElevenLabs API keys (sk_*)
+git secrets --add 'sk_[A-Fa-f0-9]{32,}'
+
+# GitHub tokens
+git secrets --add 'gh[pousr]_[A-Za-z0-9_]{36,}'
+
+# AWS credentials
+git secrets --register-aws
+```
+
+**Scan existing history:**
+```bash
+git secrets --scan
+```
+
+### Store secrets safely
+
+Use a `.env` file (never commit it):
+```bash
+# .env (add to .gitignore)
+ELEVENLABS_API_KEY=sk_your_key_here
+```
+
+For production, use GitHub Secrets or environment variables on your hosting platform.
+
+**Reference:** [git-secrets GitHub](https://github.com/awslabs/git-secrets)
