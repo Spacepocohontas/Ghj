@@ -8,8 +8,22 @@ const ALLOWED_ORIGINS = [
 function cors(res, origin) {
   if (ALLOWED_ORIGINS.includes(origin)) res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+
+async function listVoices(req, res) {
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) return res.status(503).json({ error: 'Voice provider is not configured on the server.' });
+  const p = new URLSearchParams();
+  const allowed = ['search','page_size','next_page_token','voice_type','category','gender','age','language','accent','sort','sort_direction','use_cases'];
+  for (const k of allowed) if (req.query?.[k]) p.set(k, String(req.query[k]));
+  if (!p.has('page_size')) p.set('page_size','50');
+  const upstream = await fetch(`https://api.elevenlabs.io/v2/voices?${p}`, { headers: { 'xi-api-key': key, Accept: 'application/json' } });
+  const type = upstream.headers.get('content-type') || '';
+  const data = type.includes('json') ? await upstream.json().catch(() => ({})) : { raw: await upstream.text() };
+  if (!upstream.ok) return res.status(upstream.status).json({ error: 'Could not list ElevenLabs voices.', detail: data });
+  return res.status(200).json(data);
 }
 
 async function eleven(req, res) {
@@ -73,8 +87,9 @@ async function clone(req, res) {
 module.exports = async (req, res) => {
   cors(res, req.headers.origin || '');
   if (req.method === 'OPTIONS') return res.status(204).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   try {
+    if (req.method === 'GET' && req.query?.action === 'voices') return await listVoices(req, res);
+    if (req.method !== 'POST') return res.status(405).json({ error: 'GET voices or POST TTS/clone only' });
     if (req.query?.action === 'clone') return await clone(req, res);
     const { voiceId, text } = req.body || {};
     if (!voiceId || !text) return res.status(400).json({ error: 'voiceId and text are required.' });
