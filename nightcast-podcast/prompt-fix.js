@@ -1,0 +1,20 @@
+(()=>{const $=id=>document.getElementById(id);function directorState(){let s={};try{s=JSON.parse(localStorage.getItem('nightcast-ui-v2')||'{}')}catch{};return s}function buildPrompt(){const s=directorState(),names=cast.map(id=>db.characters.find(c=>c.id===id)).filter(Boolean);const toggles={act:s.actOut!==false,interrupt:s.interrupts!==false,improv:s.improv!==false,lore:s.useLore!==false,books:s.useBooks!==false,voice:s.preserveVoice!==false,research:s.research===true,web:s.webHelp===true};return `Create a complete ${$('length').value}-minute Nightcast podcast. Format: ${$('format').value}. Tone: ${$('tone').value}. Topic: ${$('topic').value||'a strange midnight mystery'}. Episode structure: ${s.structure||'Free-flowing conversation'}. Generation mode: ${s.genMode||'quality'}.
+
+CAST DEFINITIONS:
+${names.map(c=>{const books=(c.lorebooks||[]).slice(0,3).map(b=>`${b.name||'Lorebook'}: ${typeof b.data==='string'?b.data:JSON.stringify(b.data||{})}`).join('\n');return `Name: ${c.name}\nBio: ${c.bio||''}\nPersonality: ${c.personality||''}\nSpeaking style: ${c.style||''}\nCatchphrase: ${c.catchphrase||''}\nLore: ${c.lore||''}\nLorebooks (up to 3): ${books}`}).join('\n\n')}
+
+DIRECTOR CONTROLS:
+Act out real dialogue: ${toggles.act}
+Natural interruptions: ${toggles.interrupt}
+Improvisation: ${toggles.improv}
+Use character lore: ${toggles.lore}
+Use up to 3 lorebooks: ${toggles.books}
+Preserve character voice: ${toggles.voice}
+Fact-check/research: ${toggles.research}
+Web help: ${toggles.web}
+
+DIRECTOR INSTRUCTIONS:
+${s.directorPrompt||'Make the conversation feel spontaneous, specific, emotionally believable, and distinct for every speaker.'}
+
+Rules: This must be an actual performed conversation, never a questionnaire or a list of prompts. Characters must respond to what the other characters actually said. Do not write meta commentary, instructions, speaker coaching, or fake dialogue containing directions. Use exactly the listed speakers. Return ONLY valid JSON: {"title":"...","lines":["Speaker: spoken dialogue",...]}.`}
+async function run(){const b=$('aiGenerate');if(!b)return;b.disabled=true;b.textContent='Generating…';try{const prompt=buildPrompt(),provider=api.provider||'gemini';let j;if(provider==='local'){generate();return}if(provider==='gateway'){const s=directorState();const r=await fetch('/api/ai-gateway',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:api.gatewayKey,model:api.gatewayModel,prompt,webHelp:s.webHelp===true})});const x=await r.json();if(!r.ok)throw Error(x.error||'Vercel AI Gateway failed');j=x}else if(provider==='huggingface'){if(!api.hfKey)throw Error('Add a Hugging Face API key in API Vault first.');const r=await fetch('https://router.huggingface.co/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+api.hfKey},body:JSON.stringify({model:api.hfModel||'Qwen/Qwen3-32B',messages:[{role:'system',content:'You are Nightcast Podcast Director. Return only the requested JSON.'},{role:'user',content:prompt}],temperature:.9,response_format:{type:'json_object'}})});const x=await r.json();if(!r.ok)throw Error(x?.error?.message||'Hugging Face failed');j=JSON.parse(x?.choices?.[0]?.message?.content||'{}')}else if(provider==='openrouter'){if(!api.openrouterKey)throw Error('Add an OpenRouter API key in API Vault first.');j=await generateOpenRouter(prompt)}else if(api.geminiKey){j=await generateGeminiDirect(prompt)}else{const r=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:api.geminiModel,prompt})});const x=await r.json();if(!r.ok)throw Error(x.error||'Gemini failed');j=x}show(Array.isArray(j.lines)?j.lines:[],j.title||$('title').value||'Nightcast Episode')}catch(e){alert(e.message+' — using the local podcast generator instead.');generate()}finally{b.disabled=false;b.textContent='✨ Generate with AI'}}$('aiGenerate').onclick=run;})();
