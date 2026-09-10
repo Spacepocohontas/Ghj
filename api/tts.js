@@ -29,16 +29,22 @@ async function listVoices(req, res) {
 async function eleven(req, res) {
   const key = process.env.ELEVENLABS_API_KEY;
   if (!key) return res.status(503).json({ error: 'Voice provider is not configured on the server.' });
-  const upstream = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(req.body.voiceId)}?output_format=mp3_44100_128`, {
+  const voiceId = String(req.body.voiceId || '').trim();
+  const modelId = String(req.body.modelId || 'eleven_v3').trim();
+  const upstream = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`, {
     method: 'POST', headers: { 'xi-api-key': key, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
-    body: JSON.stringify({ text: req.body.text, model_id: req.body.modelId || 'eleven_multilingual_v2', ...(req.body.voiceSettings ? { voice_settings: req.body.voiceSettings } : {}) })
+    body: JSON.stringify({ text: req.body.text, model_id: modelId, ...(req.body.voiceSettings ? { voice_settings: req.body.voiceSettings } : {}) })
   });
   const type = upstream.headers.get('content-type') || '';
   if (!upstream.ok) {
     const detail = type.includes('json') ? await upstream.json().catch(() => ({})) : await upstream.text();
     return res.status(upstream.status).json({ error: 'ElevenLabs request failed.', detail });
   }
-  res.setHeader('Content-Type', type || 'audio/mpeg'); res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Content-Type', type || 'audio/mpeg');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Nightshade-Voice-Provider', 'elevenlabs');
+  res.setHeader('X-Nightshade-Voice-Id', voiceId);
+  res.setHeader('X-Nightshade-TTS-Model', modelId);
   return res.status(200).send(Buffer.from(await upstream.arrayBuffer()));
 }
 
@@ -88,8 +94,9 @@ module.exports = async (req, res) => {
   cors(res, req.headers.origin || '');
   if (req.method === 'OPTIONS') return res.status(204).end();
   try {
+    if (req.method === 'GET' && req.query?.action === 'health') return res.status(200).json({ ok: true, provider: 'elevenlabs', configured: Boolean(process.env.ELEVENLABS_API_KEY), model: 'eleven_v3' });
     if (req.method === 'GET' && req.query?.action === 'voices') return await listVoices(req, res);
-    if (req.method !== 'POST') return res.status(405).json({ error: 'GET voices or POST TTS/clone only' });
+    if (req.method !== 'POST') return res.status(405).json({ error: 'GET health/voices or POST TTS/clone only' });
     if (req.query?.action === 'clone') return await clone(req, res);
     const { voiceId, text } = req.body || {};
     if (!voiceId || !text) return res.status(400).json({ error: 'voiceId and text are required.' });
