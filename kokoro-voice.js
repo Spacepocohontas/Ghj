@@ -1,0 +1,19 @@
+(()=>{
+if(window.__nfKokoroVoice)return;window.__nfKokoroVoice=1;
+const MODEL='onnx-community/Kokoro-82M-ONNX';
+let engine=null,loading=null,currentVoice='af_heart';
+const VOICES=[
+ ['af_heart','Heart','American · female · warm'],['af_sky','Sky','American · female · bright'],['af_bella','Bella','American · female · soft'],['af_nicole','Nicole','American · female · smooth'],['af_sarah','Sarah','American · female · clear'],
+ ['am_adam','Adam','American · male · deep'],['am_michael','Michael','American · male · calm'],['bf_emma','Emma','British · female · warm'],['bf_isabella','Isabella','British · female · elegant'],['bm_george','George','British · male · refined'],['bm_lewis','Lewis','British · male · low']
+];
+async function load(){
+ if(engine)return engine;
+ if(loading)return loading;
+ loading=(async()=>{const mod=await import('https://esm.sh/kokoro-js@1.2.1');const KokoroTTS=mod.KokoroTTS||mod.default?.KokoroTTS||mod.default;if(!KokoroTTS)throw Error('Kokoro library did not load');const device=('gpu'in navigator&&navigator.gpu)?'webgpu':'wasm';engine=await KokoroTTS.from_pretrained(MODEL,{dtype:device==='webgpu'?'fp32':'q4',device});return engine})().finally(()=>{loading=null});
+ return loading;
+}
+async function speak(text,voice=currentVoice){const t=String(text||'').trim();if(!t)return false;try{const tts=await load();const audio=await tts.generate(t,{voice});audio.play?.();if(audio.play)return true;if(audio.audio){const blob=new Blob([audio.audio.buffer||audio.audio],{type:'audio/wav'});const url=URL.createObjectURL(blob);const a=new Audio(url);a.onended=()=>URL.revokeObjectURL(url);await a.play();return true}return false}catch(e){console.warn('Kokoro TTS failed',e);return false}}
+async function assign(charId,voice){const cs=await get('characters')||[],c=cs.find(x=>x.id===charId);if(!c)return;c.voice={...(c.voice||{}),provider:'kokoro',providerVoiceId:voice,providerVoiceName:(VOICES.find(v=>v[0]===voice)||[])[1]||voice,savedVoiceId:null,browserVoice:null,browserVoiceName:null,autoRead:true};await put('characters',cs);currentVoice=voice;return c}
+function open(charId){const ov=document.createElement('div');ov.className='nf-voice-modal';ov.innerHTML='<section class="nf-voice-sheet"><div class="row"><div class="grow"><div class="brand">KOKORO · FREE LOCAL AI VOICE</div><h2 style="margin:2px 0">Choose a local character voice</h2><div class="muted tiny">Runs in your browser. No API key, subscription, or voice-service bill. The first use downloads the model and caches it.</div></div><button class="iconbtn" data-x>×</button></div><div id="nfKRows" class="stack" style="margin-top:10px"></div><div id="nfKStatus" class="nf-voice-help">Ready. Pick a voice and preview it.</div></section>';document.body.append(ov);const rows=ov.querySelector('#nfKRows'),status=ov.querySelector('#nfKStatus');rows.innerHTML=VOICES.map(v=>`<div class="nf-voice-row"><button class="nf-voice-play" data-kpreview="${v[0]}">▶</button><div class="nf-voice-name"><strong>${v[1]}</strong><span>${v[2]}</span></div><button class="btn" data-kuse="${v[0]}">Use</button></div>`).join('');rows.querySelectorAll('[data-kpreview]').forEach(b=>b.onclick=async()=>{status.textContent='Loading Kokoro model / generating preview...';await speak('This is a local Kokoro voice preview.',b.dataset.kpreview);status.textContent='Preview finished.'});rows.querySelectorAll('[data-kuse]').forEach(b=>b.onclick=async()=>{status.textContent='Saving voice...';await assign(charId,b.dataset.kuse);ov.remove();await render()});ov.querySelector('[data-x]').onclick=()=>ov.remove();ov.addEventListener('click',e=>e.target===ov&&ov.remove())}
+window.nfKokoro={speak,load,open,assign,voices:VOICES};
+})();
