@@ -90,3 +90,9 @@ ELEVENLABS_API_KEY=sk_your_key_here
 For production, use GitHub Secrets or environment variables on your hosting platform.
 
 **Reference:** [git-secrets GitHub](https://github.com/awslabs/git-secrets)
+
+## Document uploads and music video controls
+
+Nightshade character imports and both Nightcast podcast pages now read TXT, Markdown, JSON, HTML, CSV, PDF with selectable text, DOCX, EPUB, ODT and RTF locally in the browser. Review the character editor before saving; podcast pages also offer an episode source upload. Existing PNG character cards remain supported. Unsupported binary files produce a readable error instead of becoming garbled character text. Scanned PDFs need OCR; legacy DOC/encrypted documents need conversion. Limits: 25 MB, 500 PDF pages, 500,000 extracted characters. `document-support/` contains the reader source, build instructions, dependency licenses, and browser extraction regression tests. Standalone podcast deployments carry the same local reader under their own directory.
+
+Media DJ now offers full app/preview fullscreen, timed random visualization changes, separate original-video mute and soundtrack volume, video delay, synchronized playback/seeking, and recordings containing both the canvas video and the mixed soundtrack. Load a video, add replacement audio, leave original audio muted, then use Play; the replacement track drives the video clock.

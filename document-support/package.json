@@ -1,0 +1,19 @@
+{
+  "private": true,
+  "name": "studio-document-import",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "node build.cjs",
+    "test": "node test.cjs"
+  },
+  "dependencies": {
+    "pdfjs-dist": "4.10.38",
+    "mammoth": "1.11.0",
+    "fflate": "0.8.2"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "playwright": "1.56.1",
+    "pdfkit": "0.17.2"
+  }
+}
