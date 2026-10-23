@@ -1,1 +1,186 @@
-(()=>{const old=window.render;const FREE=[['openrouter/free','Forge Free Auto — rotates available free models'],['deepseek/deepseek-r1:free','DeepSeek R1 — Free'],['openai/gpt-oss-20b:free','GPT-OSS 20B — Free'],['nvidia/nemotron-3-nano-30b-a3b:free','Nemotron Nano — Free'],['deepseek-ai/DeepSeek-R1','HF · DeepSeek R1'],['Qwen/Qwen3-32B','HF · Qwen3 32B'],['Qwen/Qwen3-14B','HF · Qwen3 14B'],['openai/gpt-oss-120b','HF · GPT-OSS 120B'],['meta-llama/Llama-3.3-70B-Instruct','HF · Llama 3.3 70B']];window.render=async function(){const sec=await get('security');if(sec&&!sec.setupNeeded&&sessionStorage.getItem('nf_unlocked')==='1'&&!state.locked&&state.tab==='provider'){const a=document.querySelector('#app');a.innerHTML=await providerUI();bindProvider();return}await old();if(sessionStorage.getItem('nf_unlocked')==='1'&&!state.locked){document.querySelectorAll('.nav').forEach(n=>{if(!n.querySelector('[data-tab="provider"]')){const b=document.createElement('button');b.dataset.tab='provider';b.innerHTML='◈<br><small>Provider</small>';b.onclick=()=>{state.tab='provider';state.chat=null;render()};n.appendChild(b)}})}};async function providerUI(){const p=await get('provider')||{kind:'openrouter',model:'openrouter/free',base:'https://openrouter.ai/api/v1/chat/completions',key:''};const opts=FREE.map(([v,l])=>`<option value="${v}" ${p.model===v?'selected':''}>${l}</option>`).join('');return `<main class="shell"><header class="topbar"><div><div class="brand">PROVIDER STUDIO</div><h1>AI model lab</h1></div></header><section class="card stack"><div class="notice">Keys and provider settings stay in this browser. Never commit an API key to GitHub.</div><label>Provider<select id="psKind" class="input"><option value="openrouter" ${p.kind==='openrouter'?'selected':''}>OpenRouter — free model pool</option><option value="huggingface" ${p.kind==='huggingface'?'selected':''}>Hugging Face</option><option value="openai-compatible" ${p.kind==='openai-compatible'?'selected':''}>Custom OpenAI-compatible endpoint</option></select></label><label>Free model presets<select id="psPreset" class="input"><option value="">Choose a free preset…</option>${opts}</select></label><label>Model<input id="psModel" class="input" value="${esc(p.model)}" placeholder="Model name"></label><label>Chat endpoint<input id="psBase" class="input" value="${esc(p.base)}"></label><label>API key<input id="psKey" class="input" type="password" value="${esc(p.key)}" placeholder="Paste provider key here"></label><label class="switchrow"><input id="psCreative" type="checkbox" ${p.creative?'checked':''}> Creative RP mode — no extra Forge moralizing</label><div class="muted tiny">Free cloud models still have their own provider/model rules and rate limits. OpenRouter's current free plan is limited; the app cannot make a cloud model unlimited.</div><div class="row wrap"><button class="btn primary" id="psSave">Save locally</button><button class="btn" id="psTest">Test connection</button></div><div id="psMsg" class="muted"></div></section><section class="card"><h2>Why OpenRouter?</h2><p class="muted">One connection can expose a rotating free pool plus individual free models. You can switch models without changing the character.</p><p class="tiny muted">Current presets are checked against OpenRouter's live model catalog when this build was made; free availability can change.</p></section>${nav()}</main>`}function esc(s){return String(s||'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[x]))}function bindProvider(){document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;state.chat=null;render()});const kind=$('#psKind'),preset=$('#psPreset'),model=$('#psModel'),base=$('#psBase');preset.onchange=()=>{if(preset.value)model.value=preset.value;if(kind.value==='openrouter')base.value='https://openrouter.ai/api/v1/chat/completions'};kind.onchange=()=>{if(kind.value==='openrouter'){base.value='https://openrouter.ai/api/v1/chat/completions';if(!model.value||model.value.includes('gpt-oss'))model.value='openrouter/free'}if(kind.value==='huggingface'&&!base.value.includes('huggingface'))base.value='https://router.huggingface.co/v1/chat/completions'};const read=()=>({kind:kind.value,model:model.value.trim(),base:base.value.trim(),key:$('#psKey').value.trim(),creative:$('#psCreative').checked});$('#psSave').onclick=async()=>{const p=read();await put('provider',p);$('#psMsg').textContent='Saved locally. Current model: '+p.model};$('#psTest').onclick=async()=>{const p=read(),m=$('#psMsg');if(!p.base||!p.model||!p.key){m.textContent='Add an endpoint, model, and API key first.';return}m.textContent='Testing '+p.model+'…';try{const r=await fetch(p.base,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+p.key,'HTTP-Referer':location.href,'X-Title':'Nightshade Forge'},body:JSON.stringify({model:p.model,messages:[{role:'user',content:'Reply with exactly: connected'}],temperature:.2,max_tokens:12})});const raw=await r.text();let j={};try{j=JSON.parse(raw)}catch{}if(!r.ok)throw new Error('HTTP '+r.status+(j.error?.message?': '+j.error.message:''));m.textContent='Connected: '+(j.choices?.[0]?.message?.content||'response received');await put('provider',p)}catch(e){m.textContent='Connection failed: '+e.message}}}})();
+(() => {
+  if (window.__nfProviderStudioV2) return;
+  window.__nfProviderStudioV2 = 1;
+
+  const MANAGED = {
+    kind: 'managed',
+    model: 'openrouter/free',
+    base: '/api/ai',
+    key: 'server-managed',
+    creative: true,
+  };
+  const FREE = [
+    ['openrouter/free', 'Forge Free Auto — rotates available free models'],
+    ['deepseek/deepseek-r1:free', 'DeepSeek R1 — Free'],
+    ['openai/gpt-oss-20b:free', 'GPT-OSS 20B — Free'],
+    ['nvidia/nemotron-3-nano-30b-a3b:free', 'Nemotron Nano — Free'],
+  ];
+  const esc = value => String(value || '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
+  }[char]));
+
+  async function provider() {
+    const saved = await get('provider');
+    if (!saved || !saved.base || (!saved.key && saved.kind !== 'managed')) {
+      await put('provider', { ...MANAGED });
+      return { ...MANAGED };
+    }
+    if (saved.kind === 'managed') return { ...MANAGED, ...saved, key: 'server-managed', base: '/api/ai' };
+    return saved;
+  }
+
+  const previousRender = window.render;
+  window.render = async function renderProviderStudio() {
+    const security = await get('security');
+    if (security && !security.setupNeeded && sessionStorage.getItem('nf_unlocked') === '1' && !state.locked) {
+      await provider();
+      if (state.tab === 'provider') {
+        document.querySelector('#app').innerHTML = await providerUI();
+        bindProvider();
+        return;
+      }
+    }
+
+    await previousRender();
+    if (sessionStorage.getItem('nf_unlocked') === '1' && !state.locked) {
+      document.querySelectorAll('.nav').forEach(navbar => {
+        if (navbar.querySelector('[data-tab="provider"]')) return;
+        const button = document.createElement('button');
+        button.dataset.tab = 'provider';
+        button.innerHTML = '◈<br><small>Provider</small>';
+        button.onclick = () => {
+          state.tab = 'provider';
+          state.chat = null;
+          render();
+        };
+        navbar.appendChild(button);
+      });
+    }
+  };
+
+  async function providerUI() {
+    const current = await provider();
+    const options = FREE.map(([value, label]) =>
+      `<option value="${value}" ${current.model === value ? 'selected' : ''}>${label}</option>`
+    ).join('');
+    const managed = current.kind === 'managed';
+
+    return `<main class="shell">
+      <header class="topbar"><div><div class="brand">PROVIDER STUDIO</div><h1>AI connection</h1></div></header>
+      <section class="card stack">
+        <div class="notice">Forge Free is stored on the server. You do not need to paste an API key into this phone.</div>
+        <label>Connection
+          <select id="psKind" class="input">
+            <option value="managed" ${managed ? 'selected' : ''}>Forge Free — no key entry</option>
+            <option value="openrouter" ${current.kind === 'openrouter' ? 'selected' : ''}>My OpenRouter key — saved on this device</option>
+            <option value="huggingface" ${current.kind === 'huggingface' ? 'selected' : ''}>My Hugging Face token</option>
+            <option value="openai-compatible" ${current.kind === 'openai-compatible' ? 'selected' : ''}>Custom OpenAI-compatible endpoint</option>
+          </select>
+        </label>
+        <label>Free model
+          <select id="psPreset" class="input"><option value="">Choose a free preset…</option>${options}</select>
+        </label>
+        <label>Model<input id="psModel" class="input" value="${esc(current.model || MANAGED.model)}" placeholder="Model name"></label>
+        <div id="psAdvanced" class="stack" ${managed ? 'hidden' : ''}>
+          <label>Chat endpoint<input id="psBase" class="input" value="${esc(managed ? '' : current.base)}"></label>
+          <label>API key<input id="psKey" class="input" type="password" value="${esc(managed ? '' : current.key)}" placeholder="Saved only in this browser"></label>
+        </div>
+        <label class="switchrow"><input id="psCreative" type="checkbox" ${current.creative !== false ? 'checked' : ''}> Creative RP mode</label>
+        <div class="tiny muted">Forge Free uses only <code>openrouter/free</code> or models ending in <code>:free</code>. Free providers can still rate-limit a busy request.</div>
+        <div class="row wrap"><button class="btn primary" id="psSave">Save connection</button><button class="btn" id="psTest">Test connection</button></div>
+        <div id="psMsg" class="muted"></div>
+      </section>
+      ${nav()}
+    </main>`;
+  }
+
+  function bindProvider() {
+    document.querySelectorAll('[data-tab]').forEach(button => {
+      button.onclick = () => {
+        state.tab = button.dataset.tab;
+        state.chat = null;
+        render();
+      };
+    });
+
+    const kind = $('#psKind');
+    const preset = $('#psPreset');
+    const model = $('#psModel');
+    const base = $('#psBase');
+    const key = $('#psKey');
+    const advanced = $('#psAdvanced');
+
+    function updateMode() {
+      const managed = kind.value === 'managed';
+      advanced.hidden = managed;
+      if (managed) model.value = model.value.endsWith(':free') || model.value === 'openrouter/free' ? model.value : 'openrouter/free';
+      if (kind.value === 'openrouter') base.value = 'https://openrouter.ai/api/v1/chat/completions';
+      if (kind.value === 'huggingface' && !base.value.includes('huggingface')) base.value = 'https://router.huggingface.co/v1/chat/completions';
+    }
+
+    preset.onchange = () => {
+      if (preset.value) model.value = preset.value;
+    };
+    kind.onchange = updateMode;
+
+    const read = () => kind.value === 'managed'
+      ? { ...MANAGED, model: model.value.trim() || MANAGED.model, creative: $('#psCreative').checked }
+      : {
+          kind: kind.value,
+          model: model.value.trim(),
+          base: base.value.trim(),
+          key: key.value.trim(),
+          creative: $('#psCreative').checked,
+        };
+
+    $('#psSave').onclick = async () => {
+      const next = read();
+      if (!next.base || !next.model || !next.key) {
+        $('#psMsg').textContent = 'Add an endpoint, model, and API key first.';
+        return;
+      }
+      await put('provider', next);
+      $('#psMsg').textContent = next.kind === 'managed'
+        ? `Saved. ${next.model} will use the server connection.`
+        : `Saved on this device. Current model: ${next.model}`;
+    };
+
+    $('#psTest').onclick = async () => {
+      const next = read();
+      const message = $('#psMsg');
+      if (!next.base || !next.model || !next.key) {
+        message.textContent = 'Add an endpoint, model, and API key first.';
+        return;
+      }
+      message.textContent = `Testing ${next.model}…`;
+      try {
+        const response = await fetch(next.base, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${next.key}`,
+            'HTTP-Referer': location.href,
+            'X-Title': 'Nightshade Forge',
+          },
+          body: JSON.stringify({
+            model: next.model,
+            messages: [{ role: 'user', content: 'Reply with exactly: connected' }],
+            temperature: 0.2,
+            max_tokens: 12,
+          }),
+        });
+        const raw = await response.text();
+        let payload = {};
+        try { payload = JSON.parse(raw); } catch {}
+        if (!response.ok) throw new Error(`HTTP ${response.status}${payload.error?.message ? `: ${payload.error.message}` : ''}`);
+        const reply = payload.choices?.[0]?.message?.content || 'response received';
+        message.textContent = `Connected: ${reply}`;
+        await put('provider', next);
+      } catch (error) {
+        message.textContent = `Connection failed: ${error.message}`;
+      }
+    };
+
+    updateMode();
+  }
+})();
