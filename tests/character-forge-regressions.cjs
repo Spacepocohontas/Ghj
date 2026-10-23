@@ -101,6 +101,26 @@ async function testCalls() {
   assert.ok(!viewA.events.some(t=>t.includes('late answer')));
   assert.ok(!spoken.includes('B:late answer'));
 }
+function testProviderRouting() {
+ const window = {render: async()=>{}};
+ vm.runInNewContext(read('provider-studio.js'),{window});
+ assert.equal(window.nfProviderEndpoint({kind:'openrouter',model:'openrouter/free',base:'https://nightcast-studio.vercel.app/api/chat'}),
+   'https://openrouter.ai/api/v1/chat/completions');
+ assert.equal(window.nfProviderEndpoint({model:'openrouter/free',base:'https://nightcast-studio.vercel.app/api/chat'}),
+   'https://openrouter.ai/api/v1/chat/completions');
+ assert.equal(window.nfProviderEndpoint({kind:'huggingface',base:'https://wrong.example/chat'}),
+   'https://router.huggingface.co/v1/chat/completions');
+ assert.equal(window.nfProviderEndpoint({kind:'openai-compatible',base:'https://my-model.example/v1/chat/completions'}),
+   'https://my-model.example/v1/chat/completions');
+ const err=window.nfProviderResponseError({status:404},'<!DOCTYPE html><html><title>Nightcast Studio</title></html>',{},{
+   kind:'openai-compatible',base:'https://nightcast-studio.vercel.app/api/chat'
+ });
+ assert.match(err,/returned a webpage/);
+ assert.ok(!err.includes('<!DOCTYPE'));
+ const apiErr=window.nfProviderResponseError({status:429},'{"error":{"message":"Rate limit"}}',{error:{message:'Rate limit'}},{kind:'openrouter'});
+ assert.match(apiErr,/Rate limit/);
+}
+check('provider routing prevents Nightcast 404 HTML leakage',testProviderRouting);
 check('backup validation, safe merge and rollback', testBackups);
 check('serialized calls and correct character for delayed replies', testCalls);
 Promise.all(results).then(()=>{ if(!process.exitCode) console.log('Character Forge regression checks passed.'); });
