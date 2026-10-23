@@ -77,15 +77,16 @@ async function startCall(c){
   callEl(session,'#callTime').textContent=m+':'+ss;
  },1000);
 }
-function pauseMic(){if(!rec)return;muted=true;try{rec.stop()}catch{}$('#callState').textContent='Mic paused'}
-function stopCall(){if(callSession)callSession.version++;callOn=false;muted=false;try{rec?.stop()}catch{}rec=null;clearInterval(callTimer);callTimer=null;if('speechSynthesis'in window)speechSynthesis.cancel();if($('#callState'))$('#callState').textContent='Call ended';if($('#callToggle'))$('#callToggle').textContent='☎'}
+function pauseMic(){if(!rec)return;muted=true;try{rec.stop()}catch{}const el=callEl(callSession,'#callState');if(el)el.textContent='Mic paused'}
+function stopCall(){if(callSession)callSession.version++;callOn=false;muted=false;try{rec?.stop()}catch{}rec=null;clearInterval(callTimer);callTimer=null;if('speechSynthesis'in window)speechSynthesis.cancel();const label=callEl(callSession,'#callState'),toggle=callEl(callSession,'#callToggle');if(label)label.textContent='Call ended';if(toggle)toggle.textContent='☎'}
 window.nfCallReply=async(c,x)=>{const p=await get('provider');if(!p?.base||!p?.key)throw new Error('Connect a provider in Provider Studio first.');const model=x.model||p.model;if(!model)throw new Error('Choose a chat model first.');const history=x.messages.filter(m=>m.role==='user'||m.role==='assistant').slice(-30).map(m=>({role:m.role,content:m.text}));const system=typeof buildSystem==='function'?buildSystem(c,x,p,false):`Roleplay as ${c.name}. Preserve character fidelity and continuity.`;const r=await fetch(p.base,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+p.key,'HTTP-Referer':location.href,'X-Title':'Nightshade Forge'},body:JSON.stringify({model,messages:[{role:'system',content:system},...history],temperature:.9,max_tokens:1000})});const raw=await r.text();let j={};try{j=JSON.parse(raw)}catch{}if(!r.ok)throw new Error('HTTP '+r.status+(j.error?.message?': '+j.error.message:''));return j.choices?.[0]?.message?.content?.trim()||''}
 async function openCall(c){
  if(callSession)stopCall();
  state.tab='call';await render();
  const main=document.querySelector('#app');if(!main)return;
  main.innerHTML=callUI(c);
- const session={view:main,version:0};callSession=session;
+ const callView=main.querySelector('main');if(!callView)return;
+ const session={view:callView,version:0};callSession=session;
  callEl(session,'#closeCall').onclick=()=>{stopCall();callSession=null;state.tab='chat';render()};
  callEl(session,'#callToggle').onclick=()=>callOn?stopCall():startCall(c);
  callEl(session,'#callStop').onclick=stopCall;
@@ -102,7 +103,7 @@ async function openCall(c){
   input.value='';
   const button=form.querySelector('button');button.disabled=true;
   try{await queueCallTurn(c,value,session,version)}
-  finally{if(isCurrentCall(session,version))button.disabled=false;else button.disabled=false}
+  finally{button.disabled=false}
  };
 }
 async function decorateVoicePage(){document.querySelectorAll('[data-voice-char]').forEach(x=>x.remove());const cs=await chars(),main=document.querySelector('main');if(!main||!cs.length)return;const box=document.createElement('section');box.className='card stack';box.dataset.voiceChar='1';box.innerHTML='<h2>Character Voices</h2><p class="muted">Assign a browser voice to each character.</p>'+cs.map(c=>`<div class="row"><div class="avatar">${esc(c.avatar||c.name?.[0]||'?')}</div><div class="grow"><strong>${esc(c.name)}</strong><div class="tiny muted">${esc(c.voice?.browserVoice||'Browser default')}</div></div><button class="btn" data-open-voice="${esc(c.id)}">Configure</button></div>`).join('');main.insertBefore(box,main.lastElementChild);box.querySelectorAll('[data-open-voice]').forEach(b=>b.onclick=async()=>{const c=await charById(b.dataset.openVoice);if(!c)return;document.getElementById('characterVoicePanel')?.remove();main.insertBefore(document.createRange().createContextualFragment(voicePanel(c)),box);bindVoice(c)})}
