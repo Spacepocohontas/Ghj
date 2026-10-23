@@ -3,6 +3,92 @@ function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,
 function get(key){return new Promise((res,rej)=>{const r=db.transaction(STORE).objectStore(STORE).get(key);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
 function put(key,val){return new Promise((res,rej)=>{const r=db.transaction(STORE,'readwrite').objectStore(STORE).put(val,key);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
 function del(key){return new Promise((res,rej)=>{const r=db.transaction(STORE,'readwrite').objectStore(STORE).delete(key);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+// Backups are untrusted files: normalize known record shapes before writing any data.
+function checkBackupRecord(type,record,i){
+ const label=type+' record '+(i+1),obj=v=>v&&typeof v==='object'&&!Array.isArray(v);
+ if(!obj(record))throw Error(label+' must be an object.');
+ const r={...record};
+ for(const field of ['id','characterId','name','model','avatar','personality','appearance','backstory','scenario','greeting','behavior','bio']){
+  if(r[field]!=null&&typeof r[field]!=='string')throw Error(label+' has an invalid '+field+'.');
+ }
+ if(!r.id)r.id=crypto.randomUUID();
+ if(type==='characters'){
+  r.name=r.name||'Unnamed';
+  if(r.tags!=null&&(!Array.isArray(r.tags)||r.tags.some(x=>typeof x!=='string')))throw Error(label+' has invalid tags.');
+  r.tags=r.tags||[];
+  if(r.lorebookIds!=null&&(!Array.isArray(r.lorebookIds)||r.lorebookIds.some(x=>typeof x!=='string')))throw Error(label+' has invalid lorebook assignments.');
+  if(r.memory!=null&&!Array.isArray(r.memory))throw Error(label+' has invalid memory.');
+  if(r.voice!=null&&!obj(r.voice))throw Error(label+' has invalid voice settings.');
+ }else if(type==='conversations'){
+  if(!r.characterId)throw Error(label+' is missing its character ID.');
+  if(!Array.isArray(r.messages))throw Error(label+' has invalid messages.');
+  r.messages=r.messages.map((m,n)=>{
+   if(!obj(m)||typeof m.role!=='string'||typeof (m.text??m.content)!=='string')throw Error(label+' has invalid message '+(n+1)+'.');
+   return {...m,text:m.text??m.content};
+  });
+  if(r.memory!=null&&!Array.isArray(r.memory))throw Error(label+' has invalid memory.');
+ }else if(type==='lorebooks'){
+  if(!Array.isArray(r.entries))throw Error(label+' has invalid entries.');
+  r.name=r.name||'Imported lorebook';
+  r.entries=r.entries.map((e,n)=>{
+   if(!obj(e)||typeof e.content!=='string')throw Error(label+' has invalid entry '+(n+1)+'.');
+   if(e.keys!=null&&(!Array.isArray(e.keys)||e.keys.some(k=>typeof k!=='string')))throw Error(label+' has invalid entry keywords.');
+   return {...e,id:typeof e.id==='string'&&e.id?e.id:crypto.randomUUID(),name:typeof e.name==='string'?e.name:'Entry '+(n+1),keys:e.keys||[],enabled:e.enabled!==false};
+  });
+ }else if(type==='voiceCollection'){
+  r.name=r.name||'Imported voice';
+  if(r.data!=null&&typeof r.data!=='string')throw Error(label+' has invalid audio data.');
+  if(r.samples!=null&&(!Array.isArray(r.samples)||r.samples.some(x=>!obj(x))))throw Error(label+' has invalid voice samples.');
+ }
+ return r;
+}
+function scrubBackupSettings(value){
+ if(!value||typeof value!=='object'||Array.isArray(value))throw Error('Backup settings are invalid.');
+ const clean={};
+ for(const [key,v] of Object.entries(value)){
+  if(/key|secret|token|password|pin|authorization|provider|credential/i.test(key))continue;
+  if(v===null||['boolean','number','string'].includes(typeof v))clean[key]=v;
+  else if(Array.isArray(v)&&v.every(x=>x===null||['boolean','number','string'].includes(typeof x)))clean[key]=v;
+ }
+ return clean;
+}
+async function restoreBackup(j){
+ const obj=v=>v&&typeof v==='object'&&!Array.isArray(v);
+ if(!obj(j))throw Error('Backup must be a JSON object.');
+ const names=['characters','conversations','lorebooks','voiceCollection'];
+ if(!names.some(k=>Array.isArray(j[k])))throw Error('Not a Nightshade Forge backup.');
+ const imports={};
+ for(const name of names){
+  if(j[name]!=null&&!Array.isArray(j[name]))throw Error('Backup '+name+' must be a list.');
+  if(Array.isArray(j[name]))imports[name]=j[name].map((r,i)=>checkBackupRecord(name,r,i));
+ }
+ const incomingSettings=j.settings==null?null:scrubBackupSettings(j.settings);
+ const keys={characters:'characters',conversations:'conversations',lorebooks:'nf_lorebooks',voiceCollection:'voiceCollection'};
+ const staged={};
+ for(const [src,dst] of Object.entries(keys)){
+  if(!imports[src])continue;
+  const current=await get(dst)||[];
+  if(!Array.isArray(current))throw Error('Existing '+src+' data is invalid.');
+  const existing=new Set(current.map(x=>x?.id).filter(Boolean));
+  const merged=current.slice();
+  for(const record of imports[src])if(!existing.has(record.id)){merged.push(record);existing.add(record.id)}
+  staged[dst]=merged;
+ }
+ if(incomingSettings){
+  const current=await get('settings')||{};
+  if(!obj(current))throw Error('Current settings cannot be merged.');
+  staged.settings={...current,...incomingSettings};
+ }
+ // One IndexedDB transaction: either every collection is committed or none are.
+ await new Promise((resolve,reject)=>{
+  const tx=db.transaction(STORE,'readwrite'),store=tx.objectStore(STORE);
+  tx.oncomplete=()=>resolve();
+  tx.onerror=()=>reject(tx.error||Error('Backup transaction failed.'));
+  tx.onabort=()=>reject(tx.error||Error('Backup import was rolled back.'));
+  for(const [key,val] of Object.entries(staged))store.put(val,key);
+ });
+ return Object.keys(staged).length;
+}
 async function hashPin(pin,salt){const data=new TextEncoder().encode(salt+pin);const h=await crypto.subtle.digest('SHA-256',data);return [...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,'0')).join('')}
 async function createPin(pin){const salt=crypto.randomUUID();await put('security',{salt,verifier:await hashPin(pin,salt),ageConfirmed:true});sessionStorage.setItem('nf_unlocked','1');state.locked=false;render()}
 async function verifyPin(pin){const s=await get('security');if(!s)return false;return (await hashPin(pin,s.salt))===s.verifier}
@@ -19,20 +105,14 @@ async function render(){const root=$('#app');if(!(await get('security'))){root.i
  const f=imp.files?.[0],status=$('#vaultMsg');if(!f)return;
  try{
   if(f.size>50*1024*1024)throw Error('Backup file exceeds 50 MB.');
-  const j=JSON.parse(await f.text());
-  if(!Array.isArray(j.characters)&&!Array.isArray(j.conversations)&&!Array.isArray(j.lorebooks))throw Error('Not a Nightshade Forge backup.');
-  const merge=(existing,incoming)=>{
-   const result=Array.isArray(existing)?existing.slice():[];const ids=new Set(result.map(x=>x?.id).filter(Boolean));
-   for(const v of (Array.isArray(incoming)?incoming:[])){if(!v||typeof v!=='object')continue;
-    if(!v.id||!ids.has(v.id)){result.push(v);if(v.id)ids.add(v.id)}
-   }return result
-  };
-  for(const [src,dst] of [['characters','characters'],['conversations','conversations'],['lorebooks','nf_lorebooks'],['voiceCollection','voiceCollection']]){
-   if(Array.isArray(j[src]))await put(dst,merge(await get(dst),j[src]));
-  }
-  if(j.settings&&typeof j.settings==='object'&&!Array.isArray(j.settings))await put('settings',{...(await get('settings')||{}),...j.settings});
-  status.textContent='Backup imported. Existing data retained. PIN and provider API keys were not changed.';
-  imp.value='';await render();
- }catch(err){status.textContent='Import failed: '+err.message}
+  const count=await restoreBackup(JSON.parse(await f.text()));
+  imp.value='';
+  await render();
+  const message=$('#vaultMsg');
+  if(message)message.textContent='Backup imported ('+count+' data groups). Existing records retained. PIN and provider API keys were not changed.';
+ }catch(err){
+  const message=$('#vaultMsg')||status;
+  if(message)message.textContent='Import failed without changing stored data: '+err.message;
+ }
 };const erase=$('#erase');if(erase)erase.onclick=async()=>{const p=prompt('Enter your 4-digit code to erase local data.');if(p&&await verifyPin(p)){const keys=['characters','conversations','settings','security'];for(const k of keys)await del(k);sessionStorage.clear();location.reload()}else $('#vaultMsg').textContent='Not erased.'};const lock=$('#lock');if(lock)lock.onclick=()=>{sessionStorage.removeItem('nf_unlocked');state.locked=true;render()};const cp=$('#changePin');if(cp)cp.onclick=async()=>{const old=prompt('Current 4-digit code');if(!(await verifyPin(old||''))){alert('Incorrect code.');return}const n=prompt('New 4-digit code');if(!/^\d{4}$/.test(n||'')){alert('Code must be four digits.');return}const s=await get('security');s.salt=crypto.randomUUID();s.verifier=await hashPin(n,s.salt);await put('security',s);alert('PIN changed.')}}
 (async()=>{await openDB();render();setInterval(()=>{if(sessionStorage.getItem('nf_unlocked')==='1'&&document.hidden){/* placeholder for future inactivity timer */}},15000)})();
