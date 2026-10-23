@@ -1,0 +1,44 @@
+name: Free static-app smoke checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Check JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s index.html
+          while IFS= read -r -d '' file; do
+            node --check "$file"
+          done < <(find . -type f \( -name '*.js' -o -name '*.mjs' \) -not -path './node_modules/*' -not -path './.git/*' -print0)
+      - name: Check directly referenced local assets
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const html = fs.readFileSync('index.html','utf8');
+          const refs = [...html.matchAll(/\b(?:src|href)\s*=\s*["']([^"']+)["']/g)].map(m=>m[1]);
+          const missing=[];
+          for(const ref of refs){
+            if(/^(?:https?:|data:|blob:|\/\/|#|mailto:)/i.test(ref))continue;
+            const clean=ref.split(/[?#]/)[0];
+            if(!/\.(?:js|mjs|css|svg|png|jpe?g|webp|json|webmanifest|ico|woff2?|mp4)$/i.test(clean))continue;
+            const target=path.join(process.cwd(),clean.replace(/^\//,''));
+            if(!fs.existsSync(target))missing.push(ref);
+          }
+          if(missing.length){ console.error('Missing locally referenced assets:',missing.join(', '));process.exitCode=1; }
+          else console.log('Entry point and direct static assets verified.');
+          NODE
