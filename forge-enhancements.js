@@ -36,9 +36,11 @@ function attachLoreImports(){
     }catch(err){issues.push(file.name+': '+err.message)}
    }
    if(added)await putBooks(all);
-   status.textContent=added+' lorebook(s) imported'+(issues.length?'. '+issues.join(' | '):'.');
+   const report=added+' lorebook(s) imported'+(issues.length?'. '+issues.join(' | '):'.');
    input.value='';
    if(added)await render();
+   const visible=document.querySelector('#nfLoreManager [data-nf-lore-import] [role=status]')||document.querySelector('[data-nf-lore-import] [role=status]');
+   (visible||status).textContent=report;
   };
  });
 }
