@@ -2,11 +2,11 @@
 // Provider kinds with a named service use its canonical chat-completions API.
 // Keep custom OpenAI-compatible endpoints untouched, and NEVER change saved keys.
 const PROVIDER_ENDPOINTS={openrouter:'https://openrouter.ai/api/v1/chat/completions',huggingface:'https://router.huggingface.co/v1/chat/completions'};
-window.nfProviderEndpoint=p=>PROVIDER_ENDPOINTS[p?.kind]||String(p?.base||'').trim();
+window.nfProviderEndpoint=p=>PROVIDER_ENDPOINTS[p?.kind||(/^openrouter\//.test(String(p?.model||''))?'openrouter':'')]||String(p?.base||'').trim();
 window.nfProviderResponseError=(response,raw,data,provider)=>{
  const details=typeof data?.error==='string'?data.error:data?.error?.message;
  if(details)return 'HTTP '+response.status+': '+String(details).slice(0,350);
- if(/^\\s*<(?:!doctype\\s+html|html|head|body)/i.test(String(raw||''))){
+ if(/^\s*<(?:!doctype\s+html|html|head|body)/i.test(String(raw||''))){
   const expected=window.nfProviderEndpoint(provider);
   return 'HTTP '+response.status+': The saved AI chat address returned a webpage, not an AI response. Open Provider Studio and verify Chat endpoint'+(expected?' ('+expected+')':'')+'. Your existing API key can stay saved.';
  }
