@@ -44,8 +44,9 @@ async function saveStyle(id,style){
 const prior=window.nfSpeakCharacter;
 window.nfSpeakCharacter=async(text,c)=>{
   const p=c?.voice?.provider;
-  // Don't download Chatterbox's huge WebGPU model on an incompatible phone.
-  if(p==='chatterbox'&&!hasWebGPU())return speak(text,c);
+  // Chatterbox's huge browser model cannot be treated as a working phone voice merely because WebGPU exists.
+  // Keep speech in the original tap handler; no large model download on mobile.
+  if(p==='chatterbox'&&(/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)||!hasWebGPU()))return speak(text,c);
   if(p==='kokoro'&&/iPhone|iPad|iPod/.test(navigator.userAgent))return speak(text,c);
   // Browser speech must start in the original tap handler on iOS; do not await other adapters.
   if(p==='browser'||c?.voice?.browserVoice||c?.voice?.browserVoiceName)return speak(text,c);
