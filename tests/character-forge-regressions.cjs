@@ -136,8 +136,8 @@ async function testIphoneVoiceModal(){
  const window={render:async()=>{},speechSynthesis};
  const navigator={userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'};
  vm.runInNewContext(read('forge-chat-voice-ux.js'),{window,document,navigator,speechSynthesis,SpeechSynthesisUtterance});
- assert.match(injectedCss,/\\.nf-voice-modal\\{/);
- assert.match(injectedCss,/\\.nf-voice-sheet\\{/);
+ assert.ok(injectedCss.includes('.nf-voice-modal{'));
+ assert.ok(injectedCss.includes('.nf-voice-sheet{'));
  assert.match(injectedCss,/max-height:88dvh/);
  assert.match(read('forge-chat-voice-ux.js'),/Kokoro downloads a large local model/);
  const ok=await window.nfSpeakCharacter('hello device',{voice:{provider:'browser',browserVoice:''}});
