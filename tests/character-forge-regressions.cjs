@@ -194,4 +194,29 @@ check('iPhone manual playback is started by the user tap',testManualVoiceStartsF
 
 check('backup validation, safe merge and rollback', testBackups);
 check('serialized calls and correct character for delayed replies', testCalls);
+
+async function testAndroidFreeVoiceFallback(){
+  let priorCount=0, spoken='';
+  const speechSynthesis={
+    speaking:false,
+    getVoices:()=>[{name:'Device English',lang:'en-US'}],
+    cancel(){},
+    speak(u){spoken=u.text;u.onstart?.();}
+  };
+  class SpeechSynthesisUtterance{constructor(text){this.text=text;}}
+  const window={nfSpeakCharacter:async()=>{priorCount++;return false;}};
+  const navigator={userAgent:'Mozilla/5.0 (Linux; Android 14; Mobile) Chrome/130',language:'en-US',gpu:{requestAdapter(){return {};}}};
+  vm.runInNewContext(read('voice-fallback.js'),{
+    window,navigator,speechSynthesis,SpeechSynthesisUtterance,
+    setTimeout:()=>0,console
+  });
+  const ok=await window.nfSpeakCharacter('Hello Android',{voice:{provider:'chatterbox',providerVoiceId:'dark'}});
+  assert.equal(ok,true);
+  assert.equal(spoken,'Hello Android');
+  assert.equal(priorCount,0,'must not attempt the large Chatterbox model on mobile');
+  const ui=read('chatterbox-voice-ui.js');
+  assert.ok(ui.includes('/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)'));
+  assert.ok(ui.includes('they are not Chatterbox AI or voice cloning'));
+}
+check('Android Chatterbox choice speaks via free device voice without downloading AI model',testAndroidFreeVoiceFallback);
 Promise.all(results).then(()=>{ if(!process.exitCode) console.log('Character Forge regression checks passed.'); });
