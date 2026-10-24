@@ -147,6 +147,51 @@ async function testIphoneVoiceModal(){
  assert.ok(chatterbox.includes('/iPhone|iPad|iPod/i.test(navigator.userAgent)'));
 }
 check('iPhone voice styling and default device speech',testIphoneVoiceModal);
+
+async function testRegenerateNoDoubleRequestOrFlicker(){
+ const all={characters:[{id:'A',name:'Aster',personality:'Careful'}],conversations:[{id:'conversation-A',characterId:'A',messages:[{role:'user',text:'Hello'},{role:'assistant',text:'Original'}]}],provider:{kind:'openrouter',base:'https://openrouter.ai/api/v1/chat/completions',key:'fake',model:'openrouter/free'}};
+ const get=async k=>clone(all[k]);
+ const put=async(k,v)=>{all[k]=clone(v)};
+ const handlers={},textNode={textContent:'Original'};
+ const bubble={dataset:{messageIndex:'1'},querySelector:k=>k===':scope > div:first-child'?textNode:null};
+ const button={dataset:{regen:'1'},disabled:false,isConnected:true,textContent:'↻',closest:k=>k==='.bubble'?bubble:null};
+ const document={body:{},addEventListener(name,handler,capture){if(name==='click'&&capture)handlers.click=handler},querySelector:k=>k.includes('data-message-index')?bubble:null};
+ class MutationObserver{observe(){}}
+ let requestCount=0,completeRequest;
+ const waiting=new Promise(resolve=>completeRequest=resolve);
+ const fetch=async()=>{requestCount++;await waiting;return {ok:true,status:200,text:async()=>JSON.stringify({choices:[{message:{content:'Updated answer'}}]})}};
+ const window={render:async()=>{throw Error('Regeneration should never remount whole chat')},nfProviderEndpoint:()=>all.provider.base};
+ const state={tab:'chat',chat:'A',nfConversationId:'conversation-A'};
+ vm.runInNewContext(read('chat-history.js'),{window,document,MutationObserver,get,put,fetch,state,alert:msg=>{throw Error(msg)},setTimeout:()=>{}});
+ const e={target:{closest:()=>button},preventDefault(){},stopImmediatePropagation(){}};
+ handlers.click(e);handlers.click(e);
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(requestCount,1,'two taps must issue a single provider request');
+ completeRequest();
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(all.conversations[0].messages[1].text,'Updated answer');
+ assert.equal(textNode.textContent,'Updated answer');
+ assert.equal(all.conversations[0].messages[1].variants.length,2);
+ assert.equal(button.disabled,false);
+ assert.equal(read('message-menu.js').includes("document.querySelectorAll('[data-regenerate]')[i]?.click()"),false);
+ assert.equal(read('chat-upgrades.js').includes('data-regenerate'),false);
+}
+function testManualVoiceStartsFromTap(){
+ const listeners={};let spoken='';
+ const document={body:{},addEventListener(name,fn,capture){if(name==='click'&&capture)listeners.click=fn},querySelectorAll:()=>[]};
+ const window={state:{chat:'A'},__nfChatCharacter:{id:'A',voice:{provider:'browser'}},nfSpeakCharacter:(t)=>{spoken=t;return Promise.resolve(true)},addEventListener(){}};
+ const localStorage={getItem:()=>null,setItem(){}};
+ class MutationObserver{observe(){}}
+ vm.runInNewContext(read('auto-voice.js'),{document,window,MutationObserver,localStorage,navigator:{userAgent:'iPhone'},get:async()=>[],setTimeout:()=>{},clearTimeout:()=>{},console});
+ assert.equal(window.nfAutoVoice.enabled(),false,'iPhone should start with auto voice off unless explicitly enabled');
+ const bubble={querySelector:()=>({textContent:'Tap to hear this'})};
+ const button={dataset:{speak:'1'},closest:k=>k==='.bubble'?bubble:null};
+ listeners.click({target:{closest:()=>button},preventDefault(){},stopImmediatePropagation(){}});
+ assert.equal(spoken,'Tap to hear this','speech starts synchronously during tap');
+}
+check('Regenerate is single-request and updates in place',testRegenerateNoDoubleRequestOrFlicker);
+check('iPhone manual playback is started by the user tap',testManualVoiceStartsFromTap);
+
 check('backup validation, safe merge and rollback', testBackups);
 check('serialized calls and correct character for delayed replies', testCalls);
 Promise.all(results).then(()=>{ if(!process.exitCode) console.log('Character Forge regression checks passed.'); });
