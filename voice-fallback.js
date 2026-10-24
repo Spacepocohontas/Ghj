@@ -47,6 +47,8 @@ window.nfSpeakCharacter=async(text,c)=>{
   // Don't download Chatterbox's huge WebGPU model on an incompatible phone.
   if(p==='chatterbox'&&!hasWebGPU())return speak(text,c);
   if(p==='kokoro'&&/iPhone|iPad|iPod/.test(navigator.userAgent))return speak(text,c);
+  // Browser speech must start in the original tap handler on iOS; do not await other adapters.
+  if(p==='browser'||c?.voice?.browserVoice||c?.voice?.browserVoiceName)return speak(text,c);
   try{if(prior&&await prior(text,c))return true}
   catch(e){console.warn('Selected character voice failed; trying device speech',e)}
   return speak(text,c);
