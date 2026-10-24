@@ -121,6 +121,32 @@ function testProviderRouting() {
  assert.match(apiErr,/Rate limit/);
 }
 check('provider routing prevents Nightcast 404 HTML leakage',testProviderRouting);
+async function testIphoneVoiceModal(){
+ let injectedCss='',spoken='';
+ const speechSynthesis={
+  getVoices:()=>[],cancel(){},
+  speak(utterance){spoken=utterance.text;}
+ };
+ class SpeechSynthesisUtterance{constructor(text){this.text=text;}}
+ const document={
+  querySelector:()=>null,
+  createElement:()=>({id:'',textContent:''}),
+  head:{appendChild(node){injectedCss=node.textContent;}}
+ };
+ const window={render:async()=>{},speechSynthesis};
+ const navigator={userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'};
+ vm.runInNewContext(read('forge-chat-voice-ux.js'),{window,document,navigator,speechSynthesis,SpeechSynthesisUtterance});
+ assert.match(injectedCss,/\\.nf-voice-modal\\{/);
+ assert.match(injectedCss,/\\.nf-voice-sheet\\{/);
+ assert.match(injectedCss,/max-height:88dvh/);
+ assert.match(read('forge-chat-voice-ux.js'),/Kokoro downloads a large local model/);
+ const ok=await window.nfSpeakCharacter('hello device',{voice:{provider:'browser',browserVoice:''}});
+ assert.equal(ok,true);
+ assert.equal(spoken,'hello device');
+ const chatterbox=read('chatterbox-voice-ui.js');
+ assert.ok(chatterbox.includes('/iPhone|iPad|iPod/i.test(navigator.userAgent)'));
+}
+check('iPhone voice styling and default device speech',testIphoneVoiceModal);
 check('backup validation, safe merge and rollback', testBackups);
 check('serialized calls and correct character for delayed replies', testCalls);
 Promise.all(results).then(()=>{ if(!process.exitCode) console.log('Character Forge regression checks passed.'); });
