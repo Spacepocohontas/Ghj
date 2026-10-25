@@ -241,6 +241,29 @@ async function testWorldJournalFeedAndVoice(){
 }
 check('dated fictional journals, social interactions, free voice controls and backup',testWorldJournalFeedAndVoice);
 
+
+function testCharacterForgeWorldNavigationIsIsolated(){
+ const index=read('index.html'),sw=read('sw.js');
+ assert.ok(index.includes('<script src="character-world.js"></script>'),'World entry must be loaded');
+ assert.ok(index.includes('character-world.css'),'World mobile styling must be loaded');
+ for(const forbidden of ['<script src="gemini-podcast-sidecar.js">','gemini-podcast-sidecar.css','src="/studio-toolkit.js"']){
+  assert.equal(index.includes(forbidden),false,'Character Forge must not load '+forbidden);
+ }
+ assert.equal(sw.includes('gemini-podcast-sidecar.js'),false,'Unrelated podcast sidecar must not be precached');
+ assert.equal(sw.includes('studio-toolkit.js'),false,'Unrelated toolkit must not be precached');
+ const ctx={crypto:webcrypto,structuredClone,queueMicrotask};
+ vm.runInNewContext(bareApp+'\nglobalThis.__nav=nav();',ctx);
+ const html=ctx.__nav;
+ assert.ok(html.includes('data-tab="world"'),'World must be part of main navigation');
+ assert.ok(html.indexOf('data-tab="world"')<html.indexOf('data-tab="chars"'),'World must be visible before the long tab list');
+ assert.ok(read('forge-studio.js').includes('<button data-tab="world">'),'Studio navigation must also link to World');
+ assert.ok(read('character-world.css').includes('.nav [data-tab="world"]'),'World must have mobile nav styling');
+ const world=read('character-world.js');
+ assert.ok(world.includes("state.tab==='world'"),'World tab must render a page');
+ assert.ok(world.includes('await page()'),'World must provide content');
+}
+check('World tab is visible and unrelated podcast/toolkit overlays are gone',testCharacterForgeWorldNavigationIsIsolated);
+
 check('backup validation, safe merge and rollback', testBackups);
 check('serialized calls and correct character for delayed replies', testCalls);
 
