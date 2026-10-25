@@ -10,7 +10,7 @@ const today=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+
 const isDate=s=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&!Number.isNaN(new Date(s+'T12:00:00').getTime())&&new Date(s+'T12:00:00').toISOString().slice(0,10)===s&&s<=today();
 const records=async key=>{const a=await get(key);return Array.isArray(a)?a:[]};
 const characters=()=>records('characters');
-let view='journal',characterId='',date=today(),voicePreviewMessage='The night remembers everything we leave unsaid.',allLocales=false,busy=false;
+let cachedJournals=[],cachedCharacters=[];let view='journal',characterId='',date=today(),voicePreviewMessage='The night remembers everything we leave unsaid.',allLocales=false,busy=false;
 const characterName=(cs,id)=>cs.find(c=>c.id===id)?.name||'Unknown character';
 const short=s=>clean(s).replace(/[\r\n]+/g,' ').slice(0,90);
 const userUnlocked=async()=>{try{const sec=await get('security');return Boolean(sec&&!sec.setupNeeded&&sessionStorage.getItem('nf_unlocked')==='1'&&!state.locked)}catch{return false}};
@@ -67,7 +67,7 @@ async function commentPost(postId,authorId,text,origin='user'){
 }
 async function journalUI(cs){
  const entries=(await records(JKEY)).filter(x=>x.characterId===characterId).sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt.localeCompare(a.createdAt));
- const onDate=entries.filter(x=>x.date===date);
+ cachedJournals=entries;cachedCharacters=cs;const onDate=entries.filter(x=>x.date===date);
  const other=entries.filter(x=>x.date!==date).slice(0,14);
  return head('Private journals','Peek into fictional characters’ inner lives. Entries are imagined, generated only when you request them, and stored on this device.')
  +'<section class="card stack">'+choose(cs)+'<label>Explore a date<input class="input" id="nfJournalDate" type="date" min="1900-01-01" max="'+today()+'" value="'+esc(date)+'"></label>'
@@ -148,7 +148,7 @@ function attach(){
   const cs=await characters(),c=cs.find(x=>x.id===characterId),day=date;
   try{const text=await modelText('You are writing fictional private journals for a creative roleplay app.',journalPrompt(c,day));await saveJournal(c.id,day,text,'ai');if(state.tab==='world'&&view==='journal'){await render();status('Imagined journal entry saved.')}}catch(e){status('Could not generate: '+e.message)}finally{busy=false;if(aiJournal.isConnected)aiJournal.disabled=false}
  };
- world.querySelectorAll('[data-nf-read-journal]').forEach(b=>b.onclick=async()=>{const j=(await records(JKEY)).find(x=>x.id===b.dataset.nfReadJournal);if(!j)return;const cs=await characters();directVoice(j.text,cs.find(c=>c.id===j.characterId))});
+ world.querySelectorAll('[data-nf-read-journal]').forEach(b=>b.onclick=()=>{const j=cachedJournals.find(x=>x.id===b.dataset.nfReadJournal);if(!j)return;directVoice(j.text,cachedCharacters.find(c=>c.id===j.characterId))});
  world.querySelectorAll('[data-nf-delete-journal]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this fictional journal entry?'))return;const list=(await records(JKEY)).filter(x=>x.id!==b.dataset.nfDeleteJournal);await put(JKEY,list);await render()});
  const save=world.querySelector('#nfSavePost');if(save)save.onclick=async()=>{try{await savePost(characterId,world.querySelector('#nfSocialDraft').value);await render()}catch(e){status(e.message)}};
  const generate=world.querySelector('#nfGeneratePost');if(generate)generate.onclick=async()=>{
@@ -170,6 +170,7 @@ function attach(){
  const all=world.querySelector('#nfAllVoices');if(all)all.onchange=()=>{allLocales=all.checked;render()};
  const rate=world.querySelector('#nfVoiceRate');if(rate)rate.oninput=()=>world.querySelector('#nfRateValue').textContent=Number(rate.value).toFixed(2)+'×';
  const pitch=world.querySelector('#nfVoicePitch');if(pitch)pitch.oninput=()=>world.querySelector('#nfPitchValue').textContent=Number(pitch.value).toFixed(2);
+ const style=world.querySelector('#nfVoiceStyle');if(style)style.onchange=()=>{const preset=window.nfBrowserVoice?.presets?.[style.value];if(!preset)return;const rate=world.querySelector('#nfVoiceRate'),pitch=world.querySelector('#nfVoicePitch');if(rate){rate.value=preset[0];world.querySelector('#nfRateValue').textContent=Number(rate.value).toFixed(2)+'×'}if(pitch){pitch.value=preset[1];world.querySelector('#nfPitchValue').textContent=Number(pitch.value).toFixed(2)}};
  const listen=world.querySelector('#nfVoicePreview');if(listen)listen.onclick=()=>{
   const sample=world.querySelector('#nfVoiceSample');voicePreviewMessage=sample?.value?.slice(0,600)||voicePreviewMessage;
   // Synchronous playback inside click callback is essential on Safari.
