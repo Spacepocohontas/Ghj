@@ -70,7 +70,7 @@ async function journalUI(cs){
  cachedJournals=entries;cachedCharacters=cs;const onDate=entries.filter(x=>x.date===date);
  const other=entries.filter(x=>x.date!==date).slice(0,14);
  return head('Private journals','Peek into fictional characters’ inner lives. Entries are imagined, generated only when you request them, and stored on this device.')
- +'<section class="card stack">'+choose(cs)+'<label>Explore a date<input class="input" id="nfJournalDate" type="date" min="1900-01-01" max="'+today()+'" value="'+esc(date)+'"></label>'
+ +'<section class="card stack">'+choose(cs)+'<label>Explore a date<input class="input" id="nfJournalDate" type="date" min="0001-01-01" max="'+today()+'" value="'+esc(date)+'"></label>'
  +'<div class="row wrap"><button class="btn primary" id="nfJournalGenerate">✦ Write secret AI entry</button><button class="btn" id="nfJournalSave">Save my own entry</button></div>'
  +'<label>Journal draft<textarea class="input" rows="5" id="nfJournalDraft" maxlength="12000" placeholder="Write a diary entry, or generate one in the character’s voice."></textarea></label><div class="tiny muted">No automatic spying on real people or other apps; these are fictional entries inside your story.</div></section>'
  +'<section class="stack"><h2>Entries for '+esc(date)+'</h2>'+ (onDate.length?onDate.map(j=>journalCard(j,cs)).join(''):'<div class="card muted">No entry for this day. You can create one above.</div>')+'</section>'
