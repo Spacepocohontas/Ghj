@@ -193,6 +193,7 @@ window.render=async(...args)=>{
 };
 function bindNav(){
  if(state.locked||sessionStorage.getItem('nf_unlocked')!=='1')return;
+ if(state.tab==='world')document.querySelectorAll('.nf-world .nav [data-tab]').forEach(button=>{button.onclick=()=>{state.tab=button.dataset.tab;state.chat=null;render()}});
  document.querySelectorAll('.nav').forEach(n=>{
   if(n.querySelector('[data-tab="world"]'))return;
   const b=document.createElement('button');b.dataset.tab='world';b.innerHTML='✦<br><small>World</small>';
