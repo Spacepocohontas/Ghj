@@ -6,8 +6,19 @@ const presets={natural:[1,1],dark:[.88,.74],warm:[.94,.96],cinematic:[.84,.84],p
 const available=()=>typeof speechSynthesis!=='undefined'&&typeof SpeechSynthesisUtterance!=='undefined';
 const hasWebGPU=()=>Boolean(navigator.gpu?.requestAdapter);
 let active;
+function normalizeSpeech(text,options={}){
+ const raw=String(text??'').trim();
+ // Retain punctuation for prosody but skip RP markdown and decorative symbols.
+ if(options.speakMode==='dialogue'){
+  const quoted=[...raw.matchAll(/["“]([^"”]{1,600})["”]/g)].map(m=>m[1].trim()).filter(Boolean);
+  if(quoted.length)return quoted.join('. ').slice(0,1900);
+  const outsideActions=raw.replace(/\*[^*]+\*/g,' ').replace(/\[[^\]]+\]/g,' ').trim();
+  return (outsideActions||raw).slice(0,1900);
+ }
+ return raw.replace(/<[^>]*>/g,' ').replace(/\*\*/g,'').replace(/\s+/g,' ').trim().slice(0,1900);
+}
 function speak(text,c={}){
-  const msg=String(text??'').trim();
+  const msg=normalizeSpeech(text,c?.voice);
   if(!msg||!available())return Promise.resolve(false);
   const p=c.voice||{},style=p.deliveryStyle||(p.provider==='chatterbox'?p.providerVoiceId:'natural');
   const [r,pitch]=presets[style]||presets.natural;
@@ -54,5 +65,5 @@ window.nfSpeakCharacter=async(text,c)=>{
   catch(e){console.warn('Selected character voice failed; trying device speech',e)}
   return speak(text,c);
 };
-window.nfBrowserVoice={speak,saveStyle,available,hasWebGPU,presets};
+window.nfBrowserVoice={speak,saveStyle,available,hasWebGPU,presets,normalizeSpeech};
 })();
