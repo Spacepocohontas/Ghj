@@ -192,6 +192,55 @@ function testManualVoiceStartsFromTap(){
 check('Regenerate is single-request and updates in place',testRegenerateNoDoubleRequestOrFlicker);
 check('iPhone manual playback is started by the user tap',testManualVoiceStartsFromTap);
 
+
+async function testWorldJournalFeedAndVoice(){
+ const store={characters:[{id:'a',name:'Aster',personality:'mysterious',backstory:'ancient library'}]};
+ const context={
+  window:{render:async()=>{},speechSynthesis:null},
+  document:{},state:{tab:'home',locked:false},
+  sessionStorage:{getItem:()=>null},
+  get:async k=>clone(store[k]),
+  put:async(k,v)=>{store[k]=clone(v)},
+  crypto:webcrypto,
+  navigator:{language:'en-US',userAgent:'iPhone'},
+  console
+ };
+ vm.runInNewContext(read('character-world.js'),context);
+ const w=context.window.nfCharacterWorld;
+ assert.ok(w,'World APIs are registered');
+ assert.equal(w.isDate(w.today()),true);
+ assert.equal(w.isDate('2099-01-01'),false,'future journal dates are blocked');
+ assert.equal(w.isDate('2026-02-30'),false,'impossible calendar dates are blocked');
+ assert.match(w.journalPrompt(store.characters[0],'2020-01-01'),/2020-01-01/);
+ assert.match(w.postPrompt(store.characters[0]),/mysterious/);
+ const entry=await w.saveJournal('a','2020-01-01','My private secret.');
+ assert.equal(store.nf_character_journals[0].id,entry.id);
+ assert.equal(store.nf_character_journals[0].date,'2020-01-01');
+ await assert.rejects(w.saveJournal('a','2099-01-01','Time traveler'),/valid date/);
+ const post=await w.savePost('a','Midnight in the library.');
+ await w.commentPost(post.id,'you','What happened?');
+ assert.equal(store.nf_character_posts[0].comments.length,1);
+ assert.equal(store.nf_character_posts[0].comments[0].text,'What happened?');
+ assert.equal(read('index.html').includes('character-world.js'),true);
+ assert.equal(read('index.html').includes('character-world.css'),true);
+ assert.equal(read('sw.js').includes('character-world.js'),true);
+ const v={window:{},navigator:{language:'en-US',userAgent:'iPhone'}};
+ vm.runInNewContext(read('voice-fallback.js'),v);
+ assert.equal(v.window.nfBrowserVoice.normalizeSpeech('**Hello!**',{speakMode:'all'}),'Hello!');
+ assert.equal(v.window.nfBrowserVoice.normalizeSpeech('*turns* "Come closer," she said.',{speakMode:'dialogue'}),'Come closer,');
+ assert.equal(v.window.nfBrowserVoice.normalizeSpeech('*turns* Hello.',{speakMode:'dialogue'}),'Hello.');
+ const b=appContext.__test;
+ assert.throws(()=>b.checkBackupRecord('journals',{id:'x',characterId:'a',date:'2020-01-01',text:7},0),/journal/);
+ assert.throws(()=>b.checkBackupRecord('posts',{id:'y',characterId:'a',text:'hello',comments:[{authorId:'a',text:42}]},0),/comment/);
+ const data={journals:[],posts:[],nf_character_journals:[],nf_character_posts:[]};
+ b.setDb(mockDatabase(data));
+ await b.restoreBackup({journals:[entry],posts:[store.nf_character_posts[0]]});
+ assert.equal(data.nf_character_journals.length,1);
+ assert.equal(data.nf_character_posts.length,1);
+ assert.equal(data.nf_character_posts[0].comments.length,1);
+}
+check('dated fictional journals, social interactions, free voice controls and backup',testWorldJournalFeedAndVoice);
+
 check('backup validation, safe merge and rollback', testBackups);
 check('serialized calls and correct character for delayed replies', testCalls);
 
