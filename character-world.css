@@ -1,0 +1,25 @@
+/* Nightshade World: compact mobile-first journal, character feed and device Voice Lab */
+.nf-world{max-width:900px}
+.nf-world .nf-world-tabs{margin:12px 0;display:flex;gap:8px}
+.nf-world .nf-world-tabs>.btn{flex:1 1 140px;white-space:normal;line-height:1.25}
+.nf-world-content{display:grid;gap:14px}
+.nf-world-content h2{font-size:17px;margin:15px 0 6px}
+.nf-world-content .stack{min-width:0}
+.nf-world-content .card{min-width:0;overflow-wrap:anywhere}
+.nf-world-content label{min-width:0}
+.nf-world-content input[type=date]{width:100%;max-width:100%;-webkit-appearance:none;appearance:none;min-height:44px}
+.nf-world-content input[type=range]{width:100%;min-height:30px;accent-color:#ff3cae}
+.nf-world-content select{max-width:100%;width:100%}
+.nf-world-content textarea{max-width:100%;width:100%;resize:vertical}
+.nf-world-prose{white-space:pre-wrap;line-height:1.62;overflow-wrap:anywhere;margin:10px 0;color:#eee2f0}
+.nf-journal-card{border-left:2px solid #c64a9b;background:linear-gradient(90deg,rgba(45,21,43,.38),rgba(15,10,18,.84))}
+.nf-social-post{display:grid;gap:7px;padding:14px}
+.nf-social-post .nf-world-prose{margin:3px 0}
+.nf-social-comments{margin:4px 0 0 10px;padding-left:12px;border-left:2px solid rgba(255,108,197,.24)}
+.nf-social-comments strong{color:#ff9bd6}
+.nf-comment-form{margin:6px 0 0}
+.nf-comment-form input{min-width:130px}
+#nfWorldStatus{min-height:20px;padding:10px 3px 80px;overflow-wrap:anywhere}
+.nf-world .row>.grow{min-width:0}
+.nf-world button:disabled{opacity:.62;cursor:progress}
+@media(max-width:440px){.nf-world .nf-world-tabs>.btn{flex:1 1 100px;font-size:12px;padding:9px 5px}.nf-world-content .row.wrap>.btn{flex:1 1 auto}.nf-social-post{padding:12px}.nf-world-content h2{font-size:16px}}
