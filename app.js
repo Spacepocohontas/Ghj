@@ -35,6 +35,20 @@ function checkBackupRecord(type,record,i){
    if(e.keys!=null&&(!Array.isArray(e.keys)||e.keys.some(k=>typeof k!=='string')))throw Error(label+' has invalid entry keywords.');
    return {...e,id:typeof e.id==='string'&&e.id?e.id:crypto.randomUUID(),name:typeof e.name==='string'?e.name:'Entry '+(n+1),keys:e.keys||[],enabled:e.enabled!==false};
   });
+ }else if(type==='journals'){
+  if(!r.characterId||typeof r.date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(r.date)||typeof r.text!=='string')throw Error(label+' has invalid journal fields.');
+  r.text=r.text.slice(0,12000);
+  if(r.origin!=null&&typeof r.origin!=='string')throw Error(label+' has invalid origin.');
+ }else if(type==='posts'){
+  if(!r.characterId||typeof r.text!=='string')throw Error(label+' has invalid social post fields.');
+  r.text=r.text.slice(0,5000);
+  if(r.likes!=null&&(!Number.isSafeInteger(r.likes)||r.likes<0))throw Error(label+' has invalid like count.');
+  if(r.liked!=null&&typeof r.liked!=='boolean')throw Error(label+' has invalid liked status.');
+  if(r.comments!=null&&!Array.isArray(r.comments))throw Error(label+' has invalid comments.');
+  r.comments=(r.comments||[]).map((comment,n)=>{
+   if(!obj(comment)||typeof comment.text!=='string'||typeof comment.authorId!=='string')throw Error(label+' has invalid comment '+(n+1));
+   return {...comment,id:typeof comment.id==='string'?comment.id:crypto.randomUUID(),text:comment.text.slice(0,3000)};
+  });
  }else if(type==='voiceCollection'){
   r.name=r.name||'Imported voice';
   if(r.data!=null&&typeof r.data!=='string')throw Error(label+' has invalid audio data.');
@@ -55,7 +69,7 @@ function scrubBackupSettings(value){
 async function restoreBackup(j){
  const obj=v=>v&&typeof v==='object'&&!Array.isArray(v);
  if(!obj(j))throw Error('Backup must be a JSON object.');
- const names=['characters','conversations','lorebooks','voiceCollection'];
+ const names=['characters','conversations','lorebooks','voiceCollection','journals','posts'];
  if(!names.some(k=>Array.isArray(j[k])))throw Error('Not a Nightshade Forge backup.');
  const imports={};
  for(const name of names){
@@ -63,7 +77,7 @@ async function restoreBackup(j){
   if(Array.isArray(j[name]))imports[name]=j[name].map((r,i)=>checkBackupRecord(name,r,i));
  }
  const incomingSettings=j.settings==null?null:scrubBackupSettings(j.settings);
- const keys={characters:'characters',conversations:'conversations',lorebooks:'nf_lorebooks',voiceCollection:'voiceCollection'};
+ const keys={characters:'characters',conversations:'conversations',lorebooks:'nf_lorebooks',voiceCollection:'voiceCollection',journals:'nf_character_journals',posts:'nf_character_posts'};
  const staged={};
  for(const [src,dst] of Object.entries(keys)){
   if(!imports[src])continue;
@@ -101,7 +115,7 @@ function chars(){return `<main class="shell"><div class="hero"><div class="brand
 function create(){return chars().replace('Character Forge','Create Character').replace('Characters</div>','Create</div>')}
 async function vault(){const sec=await get('security');const ch=await get('characters')||[];const chats=await get('conversations')||[];return `<main class="shell"><div class="hero"><div class="brand">Data Vault</div><h1>Local data</h1><p class="muted">Nothing here requires a cloud account.</p></div><section class="card"><div class="vault-item"><span>Characters</span><strong>${ch.length}</strong></div><div class="vault-item"><span>Conversations</span><strong>${chats.length}</strong></div><div class="vault-item"><span>Security</span><strong>${sec?'configured':'not set'}</strong></div><div class="stack" style="margin-top:16px"><button class="btn" id="export">Export backup</button><label class="btn filebtn">⇩ Import backup<input id="importBackup" type="file" accept=".json,application/json" hidden></label><button class="btn danger" id="erase">Delete everything</button></div><div id="vaultMsg" class="muted" style="margin-top:10px"></div></section>${nav()}</main>`}
 function settings(){return `<main class="shell"><div class="hero"><div class="brand">Settings</div><h1>Control the Forge.</h1></div><section class="card stack"><button class="btn" id="lock">Lock now</button><button class="btn" id="changePin">Change PIN</button><div class="notice">Auto-lock and provider settings will be added in the next passes.</div></section>${nav()}</main>`}
-async function render(){const root=$('#app');if(!(await get('security'))){root.innerHTML=ageGate();$('#age').onclick=async()=>{await put('security',{ageConfirmed:true,setupNeeded:true});render()};return}const sec=await get('security');if(sec.setupNeeded){root.innerHTML=pinSetup();$('#savepin').onclick=async()=>{const a=$('#p1').value,b=$('#p2').value;const m=$('#msg');if(!/^\d{4}$/.test(a)||a!==b){m.textContent='Enter the same four digits in both fields.';return}await createPin(a)};return}if(sessionStorage.getItem('nf_unlocked')!=='1'||state.locked){root.innerHTML=lockScreen();$('#unlockBtn').onclick=async()=>{const ok=await verifyPin($('#unlock').value);if(!ok){$('#msg').textContent='Incorrect code.';return}sessionStorage.setItem('nf_unlocked','1');state.locked=false;render()};return}if(state.tab==='home')root.innerHTML=home();else if(state.tab==='chars')root.innerHTML=chars();else if(state.tab==='create')root.innerHTML=create();else if(state.tab==='vault')root.innerHTML=await vault();else root.innerHTML=settings();document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;render()});const save=$('#saveChar');if(save)save.onclick=async()=>{const arr=await get('characters')||[];arr.push({id:crypto.randomUUID(),name:$('#charName').value||'Unnamed',bio:$('#charBio').value||'',createdAt:new Date().toISOString()});await put('characters',arr);$('#charMsg').textContent='Saved locally.'};const exp=$('#export');if(exp)exp.onclick=async()=>{const payload={version:1,exportedAt:new Date().toISOString(),security:{ageConfirmed:true},characters:await get('characters')||[],conversations:await get('conversations')||[],settings:await get('settings')||{},lorebooks:await get('nf_lorebooks')||[],voiceCollection:await get('voiceCollection')||[]};const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));a.download='nightshade-forge-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)};const imp=$('#importBackup');if(imp)imp.onchange=async()=>{
+async function render(){const root=$('#app');if(!(await get('security'))){root.innerHTML=ageGate();$('#age').onclick=async()=>{await put('security',{ageConfirmed:true,setupNeeded:true});render()};return}const sec=await get('security');if(sec.setupNeeded){root.innerHTML=pinSetup();$('#savepin').onclick=async()=>{const a=$('#p1').value,b=$('#p2').value;const m=$('#msg');if(!/^\d{4}$/.test(a)||a!==b){m.textContent='Enter the same four digits in both fields.';return}await createPin(a)};return}if(sessionStorage.getItem('nf_unlocked')!=='1'||state.locked){root.innerHTML=lockScreen();$('#unlockBtn').onclick=async()=>{const ok=await verifyPin($('#unlock').value);if(!ok){$('#msg').textContent='Incorrect code.';return}sessionStorage.setItem('nf_unlocked','1');state.locked=false;render()};return}if(state.tab==='home')root.innerHTML=home();else if(state.tab==='chars')root.innerHTML=chars();else if(state.tab==='create')root.innerHTML=create();else if(state.tab==='vault')root.innerHTML=await vault();else root.innerHTML=settings();document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;render()});const save=$('#saveChar');if(save)save.onclick=async()=>{const arr=await get('characters')||[];arr.push({id:crypto.randomUUID(),name:$('#charName').value||'Unnamed',bio:$('#charBio').value||'',createdAt:new Date().toISOString()});await put('characters',arr);$('#charMsg').textContent='Saved locally.'};const exp=$('#export');if(exp)exp.onclick=async()=>{const payload={version:1,exportedAt:new Date().toISOString(),security:{ageConfirmed:true},characters:await get('characters')||[],conversations:await get('conversations')||[],settings:await get('settings')||{},lorebooks:await get('nf_lorebooks')||[],voiceCollection:await get('voiceCollection')||[],journals:await get('nf_character_journals')||[],posts:await get('nf_character_posts')||[]};const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));a.download='nightshade-forge-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)};const imp=$('#importBackup');if(imp)imp.onchange=async()=>{
  const f=imp.files?.[0],status=$('#vaultMsg');if(!f)return;
  try{
   if(f.size>50*1024*1024)throw Error('Backup file exceeds 50 MB.');
@@ -114,5 +128,5 @@ async function render(){const root=$('#app');if(!(await get('security'))){root.i
   const message=$('#vaultMsg')||status;
   if(message)message.textContent='Import failed without changing stored data: '+err.message;
  }
-};const erase=$('#erase');if(erase)erase.onclick=async()=>{const p=prompt('Enter your 4-digit code to erase local data.');if(p&&await verifyPin(p)){const keys=['characters','conversations','settings','security'];for(const k of keys)await del(k);sessionStorage.clear();location.reload()}else $('#vaultMsg').textContent='Not erased.'};const lock=$('#lock');if(lock)lock.onclick=()=>{sessionStorage.removeItem('nf_unlocked');state.locked=true;render()};const cp=$('#changePin');if(cp)cp.onclick=async()=>{const old=prompt('Current 4-digit code');if(!(await verifyPin(old||''))){alert('Incorrect code.');return}const n=prompt('New 4-digit code');if(!/^\d{4}$/.test(n||'')){alert('Code must be four digits.');return}const s=await get('security');s.salt=crypto.randomUUID();s.verifier=await hashPin(n,s.salt);await put('security',s);alert('PIN changed.')}}
+};const erase=$('#erase');if(erase)erase.onclick=async()=>{const p=prompt('Enter your 4-digit code to erase local data.');if(p&&await verifyPin(p)){const keys=['characters','conversations','settings','security','nf_lorebooks','voiceCollection','nf_character_journals','nf_character_posts'];for(const k of keys)await del(k);sessionStorage.clear();location.reload()}else $('#vaultMsg').textContent='Not erased.'};const lock=$('#lock');if(lock)lock.onclick=()=>{sessionStorage.removeItem('nf_unlocked');state.locked=true;render()};const cp=$('#changePin');if(cp)cp.onclick=async()=>{const old=prompt('Current 4-digit code');if(!(await verifyPin(old||''))){alert('Incorrect code.');return}const n=prompt('New 4-digit code');if(!/^\d{4}$/.test(n||'')){alert('Code must be four digits.');return}const s=await get('security');s.salt=crypto.randomUUID();s.verifier=await hashPin(n,s.salt);await put('security',s);alert('PIN changed.')}}
 (async()=>{await openDB();render();setInterval(()=>{if(sessionStorage.getItem('nf_unlocked')==='1'&&document.hidden){/* placeholder for future inactivity timer */}},15000)})();
