@@ -310,13 +310,14 @@ async function testFreeModelOutputRetry(){
    fetch:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return {ok:true,text:async()=>JSON.stringify(responses[count++])}}
  };
  vm.runInNewContext(source.slice(st,en)+'\nglobalThis.reply=realReply;',ctx);
- const answer=await ctx.reply({name:'Angelus'},{messages:[{role:'user',text:'Where are you?'}]},null,false);
+ const answer=await ctx.reply({name:'Angelus'},{messages:[{role:'assistant',status:'error',text:'⚠ Provider error: exhausted'},{role:'user',text:'Where are you?'}]},null,false);
  assert.equal(answer,'I am still here, and I heard you.');
  assert.equal(count,2);
  assert.equal(requests[0].body.max_tokens,1850);
  assert.equal(requests[1].body.max_tokens,3600);
  assert.ok(requests[1].body.messages.at(-1).content.includes('skip analysis'));
  assert.equal(requests[0].body.model,'openrouter/free');
+ assert.equal(requests[0].body.messages.some(m=>String(m.content).includes('Provider error:')),false,'do not send error notices back to model');
 }
 async function testNoAutomaticPaidRetry(){
  const source=read('forge-pass2.js');
