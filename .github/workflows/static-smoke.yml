@@ -42,3 +42,5 @@ jobs:
           if(missing.length){ console.error('Missing locally referenced assets:',missing.join(', '));process.exitCode=1; }
           else console.log('Entry point and direct static assets verified.');
           NODE
+      - name: Run Character Forge regression tests
+        run: node tests/character-forge-regressions.cjs

@@ -6,8 +6,19 @@ const presets={natural:[1,1],dark:[.88,.74],warm:[.94,.96],cinematic:[.84,.84],p
 const available=()=>typeof speechSynthesis!=='undefined'&&typeof SpeechSynthesisUtterance!=='undefined';
 const hasWebGPU=()=>Boolean(navigator.gpu?.requestAdapter);
 let active;
+function normalizeSpeech(text,options={}){
+ const raw=String(text??'').trim();
+ // Retain punctuation for prosody but skip RP markdown and decorative symbols.
+ if(options.speakMode==='dialogue'){
+  const quoted=[...raw.matchAll(/["“]([^"”]{1,600})["”]/g)].map(m=>m[1].trim()).filter(Boolean);
+  if(quoted.length)return quoted.join('. ').slice(0,1900);
+  const outsideActions=raw.replace(/\*[^*]+\*/g,' ').replace(/\[[^\]]+\]/g,' ').trim();
+  return (outsideActions||raw).slice(0,1900);
+ }
+ return raw.replace(/<[^>]*>/g,' ').replace(/\*\*/g,'').replace(/\s+/g,' ').trim().slice(0,1900);
+}
 function speak(text,c={}){
-  const msg=String(text??'').trim();
+  const msg=normalizeSpeech(text,c?.voice);
   if(!msg||!available())return Promise.resolve(false);
   const p=c.voice||{},style=p.deliveryStyle||(p.provider==='chatterbox'?p.providerVoiceId:'natural');
   const [r,pitch]=presets[style]||presets.natural;
@@ -44,12 +55,15 @@ async function saveStyle(id,style){
 const prior=window.nfSpeakCharacter;
 window.nfSpeakCharacter=async(text,c)=>{
   const p=c?.voice?.provider;
-  // Don't download Chatterbox's huge WebGPU model on an incompatible phone.
-  if(p==='chatterbox'&&!hasWebGPU())return speak(text,c);
+  // Chatterbox's huge browser model cannot be treated as a working phone voice merely because WebGPU exists.
+  // Keep speech in the original tap handler; no large model download on mobile.
+  if(p==='chatterbox'&&(/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)||!hasWebGPU()))return speak(text,c);
   if(p==='kokoro'&&/iPhone|iPad|iPod/.test(navigator.userAgent))return speak(text,c);
+  // Browser speech must start in the original tap handler on iOS; do not await other adapters.
+  if(p==='browser'||c?.voice?.browserVoice||c?.voice?.browserVoiceName)return speak(text,c);
   try{if(prior&&await prior(text,c))return true}
   catch(e){console.warn('Selected character voice failed; trying device speech',e)}
   return speak(text,c);
 };
-window.nfBrowserVoice={speak,saveStyle,available,hasWebGPU,presets};
+window.nfBrowserVoice={speak,saveStyle,available,hasWebGPU,presets,normalizeSpeech};
 })();

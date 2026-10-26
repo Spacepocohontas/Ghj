@@ -1,5 +1,29 @@
 (() => {
   if (window.__nfProviderStudioV2) return;
+  // Keep the free server-managed endpoint on production and route user-keyed
+  // providers to their documented chat APIs. Custom endpoints remain untouched.
+  const PROVIDER_ENDPOINTS = {
+    openrouter: 'https://openrouter.ai/api/v1/chat/completions',
+    huggingface: 'https://router.huggingface.co/v1/chat/completions',
+  };
+  window.nfProviderEndpoint = provider => {
+    const p = provider || {};
+    if (p.kind === 'managed' || p.base === '/api/ai') return '/api/ai';
+    if (p.kind === 'openai-compatible') return String(p.base || '').trim();
+    return PROVIDER_ENDPOINTS[p.kind || (/^openrouter\//.test(String(p.model || '')) ? 'openrouter' : '')]
+      || String(p.base || '').trim();
+  };
+  window.nfProviderResponseError = (response, raw, data, p) => {
+    const reason = typeof data?.error === 'string' ? data.error : data?.error?.message;
+    if (reason) return 'HTTP ' + response.status + ': ' + String(reason).slice(0, 350);
+    if (/^\s*<(?:!doctype\s+html|html|head|body)/i.test(String(raw || ''))) {
+      const url = window.nfProviderEndpoint(p);
+      return 'HTTP ' + response.status + ': The chat endpoint returned a webpage, not an AI response. '
+        + 'Check the saved provider connection' + (url ? ' (' + url + ')' : '') + '.';
+    }
+    return 'HTTP ' + response.status + ': AI provider request failed.';
+  };
+
   window.__nfProviderStudioV2 = 1;
 
   const MANAGED = {
