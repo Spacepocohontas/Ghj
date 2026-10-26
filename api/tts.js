@@ -12,6 +12,31 @@ function cors(res, origin) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }
 
+function ttsBridge() {
+  const url = String(process.env.FORGE_TTS_UPSTREAM || '').trim();
+  return url.startsWith('https://') ? url : '';
+}
+
+async function proxyToConfiguredVoiceServer(req, res) {
+  const base = ttsBridge();
+  if (!base) return false;
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(req.query || {})) {
+    if (value != null) query.set(key, String(value));
+  }
+  const upstream = await fetch(`${base}${query.size ? `?${query}` : ''}`, {
+    method: req.method,
+    headers: { 'Content-Type': 'application/json', Accept: req.method === 'POST' ? '*/*' : 'application/json' },
+    ...(req.method === 'POST' ? { body: JSON.stringify(req.body || {}) } : {}),
+  });
+  const type = upstream.headers.get('content-type') || 'application/octet-stream';
+  const bytes = Buffer.from(await upstream.arrayBuffer());
+  res.setHeader('Content-Type', type);
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(upstream.status).send(bytes);
+  return true;
+}
+
 async function listVoices(req, res) {
   const key = process.env.ELEVENLABS_API_KEY;
   if (!key) return res.status(503).json({ error: 'Voice provider is not configured on the server.' });
@@ -94,6 +119,10 @@ module.exports = async (req, res) => {
   cors(res, req.headers.origin || '');
   if (req.method === 'OPTIONS') return res.status(204).end();
   try {
+    if (!process.env.ELEVENLABS_API_KEY && ttsBridge()) {
+      await proxyToConfiguredVoiceServer(req, res);
+      return;
+    }
     if (req.method === 'GET' && req.query?.action === 'health') return res.status(200).json({ ok: true, provider: 'elevenlabs', configured: Boolean(process.env.ELEVENLABS_API_KEY), model: 'eleven_v3' });
     if (req.method === 'GET' && req.query?.action === 'voices') return await listVoices(req, res);
     if (req.method !== 'POST') return res.status(405).json({ error: 'GET health/voices or POST TTS/clone only' });
