@@ -5,7 +5,7 @@
  if(!p.key&&p.kind!=='managed')throw new Error('No API key is saved. Open Provider Studio or use Forge Free.');
  const model=override||x.model||p.model;
  if(!model)throw new Error('Choose a chat model in Provider Studio.');
- const history=(x.messages||[]).filter(m=>m.role==='user'||m.role==='assistant').slice(-26).map(m=>({role:m.role,content:String(m.text||'')}));
+ const history=(x.messages||[]).filter(m=>(m.role==='user'||m.role==='assistant')&&m.status!=='error'&&!String(m.text||'').startsWith('⚠ Provider error:')).slice(-26).map(m=>({role:m.role,content:String(m.text||'')}));
  const base=[{role:'system',content:buildSystem(c,x,p,cont)},...history];
  if(cont)base.push({role:'user',content:'[CONTINUE THE SCENE — no user dialogue. Continue naturally in character.]'});
  const free=p.kind==='managed'||model==='openrouter/free'||model.endsWith(':free');
