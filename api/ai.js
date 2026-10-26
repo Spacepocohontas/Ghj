@@ -67,7 +67,7 @@ module.exports = async (req, res) => {
         model,
         messages,
         temperature: Math.max(0, Math.min(2, Number(req.body?.temperature) || 0.95)),
-        max_tokens: Math.max(64, Math.min(2400, Number(req.body?.max_tokens) || 1200)),
+        max_tokens: Math.max(64, Math.min(4096, Number(req.body?.max_tokens) || 1800)),
         stream: false,
       }),
     });
