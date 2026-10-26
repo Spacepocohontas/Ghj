@@ -9,14 +9,17 @@ const ALLOWED_ORIGINS = [
 function cors(res, origin) {
   if (ALLOWED_ORIGINS.includes(origin)) res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }
 
 module.exports = async (req, res) => {
   cors(res, req.headers.origin || '');
   if (req.method === 'OPTIONS') return res.status(204).end();
+  if (req.method === 'GET') return res.status(200).json({ok:true, cloudStorageConfigured:Boolean(process.env.BLOB_READ_WRITE_TOKEN), localSamplesAvailable:true});
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  if (!process.env.BLOB_READ_WRITE_TOKEN) return res.status(503).json({ error: 'Cloud sample upload is not configured. Use Save samples locally (free), or connect Vercel Blob storage before cloud uploads.' });
+  if (process.env.FORGE_VOICE_UPLOAD_ENABLED !== 'true') return res.status(403).json({ error: 'Cloud sample uploads are disabled until an authenticated upload flow is configured. Save samples locally instead.' });
   try {
     const body = req.body || {};
     const name = String(body.name || 'voice-sample').replace(/[^a-zA-Z0-9._-]+/g, '-').slice(0, 120) || 'voice-sample';

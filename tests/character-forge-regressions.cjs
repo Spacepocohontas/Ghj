@@ -291,4 +291,80 @@ async function testAndroidFreeVoiceFallback(){
   assert.ok(ui.includes('they are not Chatterbox AI or voice cloning'));
 }
 check('Android Chatterbox choice speaks via free device voice without downloading AI model',testAndroidFreeVoiceFallback);
+
+async function testFreeModelOutputRetry(){
+ const source=read('forge-pass2.js');
+ const st=source.indexOf('async function realReply(c,x,override,cont=false){');
+ const en=source.indexOf('async function continueForge(){',st);
+ assert.ok(st>0&&en>st);
+ let count=0;const requests=[];
+ const responses=[
+   {choices:[{message:{content:''},finish_reason:'length'}]},
+   {choices:[{message:{content:'I am still here, and I heard you.'},finish_reason:'stop'}]}
+ ];
+ const ctx={
+   get:async()=>({kind:'managed',base:'/api/ai',key:'server-managed',model:'openrouter/free'}),
+   window:{nfProviderEndpoint:()=>'/api/ai'},
+   location:{href:'https://ghj-8huf.vercel.app/'},
+   buildSystem:()=> 'Stay in character.',
+   fetch:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return {ok:true,text:async()=>JSON.stringify(responses[count++])}}
+ };
+ vm.runInNewContext(source.slice(st,en)+'\nglobalThis.reply=realReply;',ctx);
+ const answer=await ctx.reply({name:'Angelus'},{messages:[{role:'assistant',status:'error',text:'⚠ Provider error: exhausted'},{role:'user',text:'Where are you?'}]},null,false);
+ assert.equal(answer,'I am still here, and I heard you.');
+ assert.equal(count,2);
+ assert.equal(requests[0].body.max_tokens,1850);
+ assert.equal(requests[1].body.max_tokens,3600);
+ assert.ok(requests[1].body.messages.at(-1).content.includes('skip analysis'));
+ assert.equal(requests[0].body.model,'openrouter/free');
+ assert.equal(requests[0].body.messages.some(m=>String(m.content).includes('Provider error:')),false,'do not send error notices back to model');
+}
+async function testNoAutomaticPaidRetry(){
+ const source=read('forge-pass2.js');
+ const st=source.indexOf('async function realReply(c,x,override,cont=false){');
+ const en=source.indexOf('async function continueForge(){',st);
+ let count=0;
+ const ctx={
+   get:async()=>({kind:'openai-compatible',base:'https://example.test/api/chat',key:'paid-key',model:'paid-model'}),
+   window:{nfProviderEndpoint:()=> 'https://example.test/api/chat'},
+   location:{href:'https://ghj-8huf.vercel.app/'},buildSystem:()=> 'In character.',
+   fetch:async()=>{count++;return {ok:true,text:async()=>JSON.stringify({choices:[{message:{content:''},finish_reason:'length'}]})}}
+ };
+ vm.runInNewContext(source.slice(st,en)+'\nglobalThis.reply=realReply;',ctx);
+ await assert.rejects(ctx.reply({name:'Aster'},{messages:[{role:'user',text:'Hello'}]}),/entire output budget/);
+ assert.equal(count,1,'paid providers should not be retried automatically');
+}
+async function testFreeLocalVoiceSamplesAndUnavailableCloudStorage(){
+ const source=read('voice-clone.js');
+ assert.ok(source.includes('Save samples locally'), 'free local save must be visible');
+ assert.ok(source.includes("engine:'local-reference'"), 'local samples must not claim to be AI clones');
+ assert.ok(source.includes("data:await readSample(s.file)"), 'samples should persist in local IndexedDB as data');
+ assert.ok(source.includes("confirm('Real AI voice cloning"),'cloud requests must have explicit user consent');
+ assert.ok(source.includes('CLOUD_DIRECT_LIMIT=2*1024*1024'),'small cloud samples may bypass unavailable Blob storage');
+ const api=read('api/voice-upload.js');
+ let endpoint;
+ const sandbox={
+   require:()=>({issueSignedToken:()=>{},presignUrl:()=>{}}),
+   module:{exports:{}},
+   process:{env:{}},
+   crypto:{randomUUID:()=> 'fake-id'},
+ };
+ vm.runInNewContext(api,sandbox);
+ endpoint=sandbox.module.exports;
+ function mockResponse(){
+  return {code:0,body:null,setHeader(){},status(code){this.code=code;return this},json(body){this.body=body;return this},end(){return this}};
+ }
+ const health=mockResponse();
+ await endpoint({method:'GET',headers:{}},health);
+ assert.equal(health.code,200);
+ assert.equal(health.body.cloudStorageConfigured,false);
+ const noBlob=mockResponse();
+ await endpoint({method:'POST',headers:{},body:{name:'voice.mp3'}},noBlob);
+ assert.equal(noBlob.code,503);
+ assert.match(noBlob.body.error,/Save samples locally/);
+}
+check('Free model retries after empty output and returns actual reply',testFreeModelOutputRetry);
+check('Paid model is not automatically retried',testNoAutomaticPaidRetry);
+check('Local voice samples are free, cloud actions require consent and Blob misconfiguration is clear',testFreeLocalVoiceSamplesAndUnavailableCloudStorage);
+
 Promise.all(results).then(()=>{ if(!process.exitCode) console.log('Character Forge regression checks passed.'); });
