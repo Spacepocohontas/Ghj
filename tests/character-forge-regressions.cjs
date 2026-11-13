@@ -139,7 +139,8 @@ async function testIphoneVoiceModal(){
  assert.ok(injectedCss.includes('.nf-voice-modal{'));
  assert.ok(injectedCss.includes('.nf-voice-sheet{'));
  assert.match(injectedCss,/max-height:88dvh/);
- assert.match(read('forge-chat-voice-ux.js'),/Kokoro downloads a large local model/);
+ assert.match(read('forge-chat-voice-ux.js'),/Kokoro is experimental on iPhone Safari/);
+ assert.match(read('forge-chat-voice-ux.js'),/Try Kokoro anyway/);
  const ok=await window.nfSpeakCharacter('hello device',{voice:{provider:'browser',browserVoice:''}});
  assert.equal(ok,true);
  assert.equal(spoken,'hello device');
