@@ -111,5 +111,6 @@ function bindVoice(c){$('#saveCharVoice').onclick=async()=>{const sel=$('#charVo
 const priorRender=window.render;window.render=async()=>{await priorRender();if(typeof state!=='undefined'&&state.tab==='voices')await decorateVoicePage()};
 // Event delegation avoids depending on bindForge being exported on window.
 document.addEventListener('click',async e=>{const b=e.target.closest?.('[data-call]');if(!b)return;const c=await currentChar()||await charById(b.dataset.character||state.chat);if(c)await openCall(c)});
+window.nfOpenCall= openCall;
 window.addEventListener('load',()=>{if('speechSynthesis'in window)speechSynthesis.addEventListener('voiceschanged',()=>{if(typeof state!=='undefined'&&state.tab==='voices')render()})});
 })();
