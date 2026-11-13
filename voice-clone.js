@@ -13,6 +13,7 @@ async function editor(){
  '<label>Description<textarea id="nfcDesc" class="input" rows="2" placeholder="Optional description"></textarea></label>'+
  '<div class="row wrap"><label class="btn">＋ Add audio/video samples<input id="nfcFiles" type="file" accept=".mp3,.mp4,.m4a,.wav,.webm,.mov,.ogg,.oga,.flac,.aac,audio/*,video/*" multiple hidden></label><button class="btn" id="nfcRecord">◉ Record</button></div>'+
  '<div class="tiny muted">Free local storage: up to 8 MB per sample, 12 MB total. You can preview recordings in Voice Studio without uploading them to a server.</div>'+
+ '<a class="btn" href="https://huggingface.co/spaces/KevinAHM/pocket-tts-web" target="_blank" rel="noopener noreferrer">🧬 Try Pocket TTS voice cloning (free browser lab) ↗</a>'+
  '<div id="nfcStatus" class="tiny muted" role="status" aria-live="polite"></div><div id="nfcSamples" class="stack"></div>'+
  '<button class="btn primary" id="nfcSave">💾 Save samples locally — FREE</button>'+
  '<details><summary>Optional: Real AI voice cloning (cloud provider)</summary>'+
@@ -97,4 +98,4 @@ async function editor(){
  };
  m.querySelector('#nfcClose').onclick=close;
 }
-function inject(){if(!['voices','chars'].includes(typeof state!=='undefined'?state.tab:window.state?.tab)){document.getElementById('nfVoiceCloneBtn')?.remove();return}if(document.getElementById('nfVoiceCloneBtn'))return;const b=document.createElement('button');b.id='nfVoiceCloneBtn';b.className='btn primary';b.textContent='🎙 Voice Samples';b.onclick=editor;(document.querySelector('main')||document.body).appendChild(b)}new MutationObserver(inject).observe(document.body,{childList:true,subtree:true});window.nfOpenVoiceClone=editor;window.addEventListener('load',()=>setTimeout(inject,300))})();
+function inject(){if(!['voices','chars'].includes(typeof state!=='undefined'?state.tab:window.state?.tab)){document.getElementById('nfVoiceCloneBtn')?.remove();return}if(document.getElementById('nfVoiceCloneBtn'))return;const b=document.createElement('button');b.id='nfVoiceCloneBtn';b.className='btn primary';b.textContent='🎙 Voice Studio';b.onclick=editor;(document.querySelector('main')||document.body).appendChild(b)}new MutationObserver(inject).observe(document.body,{childList:true,subtree:true});window.nfOpenVoiceClone=editor;window.addEventListener('load',()=>setTimeout(inject,300))})();
