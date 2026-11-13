@@ -367,4 +367,18 @@ check('Free model retries after empty output and returns actual reply',testFreeM
 check('Paid model is not automatically retried',testNoAutomaticPaidRetry);
 check('Local voice samples are free, cloud actions require consent and Blob misconfiguration is clear',testFreeLocalVoiceSamplesAndUnavailableCloudStorage);
 
+async function testFreePocketCloneLabAndMobileVoiceOptions(){
+ const picker=read('forge-chat-voice-ux.js');
+ const studio=read('voice-clone.js');
+ assert.ok(picker.includes("data-vtab=\"pocket\""),'character voice picker should include Pocket Clone Lab');
+ assert.ok(picker.includes('https://huggingface.co/spaces/KevinAHM/pocket-tts-web'),'Pocket clone lab should link to the hosted browser demo');
+ assert.ok(picker.includes('clone embedding does not transfer into Character Forge yet'),'external clone workflow must disclose integration limitation');
+ assert.ok(picker.includes('Try Kokoro anyway'),'iPhone Kokoro must be explicit opt-in, not silently forced');
+ assert.ok(picker.includes('Accessibility → Spoken Content → Voices'),'iPhone voice installation guidance should be visible');
+ assert.ok(studio.includes('Try Pocket TTS voice cloning (free browser lab)'),'Voice Studio should link to real clone lab');
+ assert.ok(studio.includes('Save samples locally'),'free local sample storage must remain available');
+}
+check('Pocket TTS clone lab and improved iPhone voice options are disclosed and available',testFreePocketCloneLabAndMobileVoiceOptions);
+
+
 Promise.all(results).then(()=>{ if(!process.exitCode) console.log('Character Forge regression checks passed.'); });
