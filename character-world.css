@@ -32,3 +32,24 @@
 .nav [data-tab="world"]{color:#e0a2dc}
 .nav [data-tab="world"].active{color:#ff3cae}
 @media(min-width:700px){.nav{max-width:720px;justify-content:space-around}.nav button{min-width:60px}}
+
+/* World Simulator: mobile-first cinematic stage and character controls */
+.nf-sim-cast-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px;margin-top:10px}
+.nf-sim-cast{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid #49364d;border-radius:11px;background:#100c14;min-width:0}
+.nf-sim-cast input{accent-color:#ff3cae;width:18px;height:18px;flex:0 0 auto}
+.nf-sim-cast span{overflow-wrap:anywhere}
+.nf-sim-stage{position:relative;isolation:isolate;min-height:340px;overflow:hidden;border:1px solid #59405f;border-radius:20px;padding:24px 16px;background:radial-gradient(ellipse at 50% 18%,#5c416c 0,#211a32 42%,#08070e 100%);perspective:900px}
+.nf-sim-stage.anime{background:radial-gradient(ellipse at 50% 15%,#8a477f 0,#30204e 48%,#090711 100%)}
+.nf-sim-sky{position:absolute;inset:0;z-index:-3;background:radial-gradient(circle at 20% 25%,rgba(255,255,255,.18) 0 1px,transparent 2px),radial-gradient(circle at 75% 16%,rgba(255,255,255,.2) 0 1px,transparent 2px),linear-gradient(150deg,transparent 35%,rgba(0,0,0,.38))}
+.nf-sim-horizon{position:absolute;z-index:-2;left:-15%;right:-15%;bottom:-45%;height:78%;transform:rotateX(66deg);transform-origin:top;background:repeating-linear-gradient(90deg,transparent 0 68px,rgba(231,190,239,.15) 69px 70px),repeating-linear-gradient(0deg,transparent 0 54px,rgba(231,190,239,.15) 55px 56px),linear-gradient(#34283e,#0b0910);box-shadow:0 -30px 90px rgba(0,0,0,.5)}
+.nf-sim-title{position:relative;text-align:center;font:700 clamp(22px,5vw,34px) Georgia,serif;letter-spacing:.06em;text-shadow:0 4px 20px #000}
+.nf-sim-subtitle{text-align:center;font-size:10px;letter-spacing:.28em;color:#f0c9ef;margin-top:8px}
+.nf-sim-stage-cast{position:relative;display:flex;justify-content:center;align-items:end;gap:clamp(7px,3vw,28px);min-height:185px;margin-top:28px;transform-style:preserve-3d}
+.nf-sim-figure{display:flex;flex-direction:column;align-items:center;gap:9px;min-width:0;max-width:115px;transform:translateZ(calc(var(--i)*8px)) rotateY(calc((var(--i) - 2)*-3deg));animation:nfSimFloat 4s ease-in-out infinite;animation-delay:calc(var(--i)*-.45s)}
+.nf-sim-avatar{width:clamp(54px,15vw,92px);height:clamp(70px,19vw,118px);display:grid;place-items:center;overflow:hidden;border-radius:48% 48% 18% 18%;border:2px solid rgba(255,220,255,.65);background:linear-gradient(145deg,#b99ac2,#34213f 65%,#0c0912);box-shadow:0 12px 35px rgba(0,0,0,.55),inset 0 0 24px rgba(255,255,255,.16);font:700 32px Georgia,serif;color:#fff}
+.nf-sim-avatar img{width:100%;height:100%;object-fit:cover}
+.nf-sim-figure strong{font-size:12px;text-align:center;text-shadow:0 2px 8px #000;overflow-wrap:anywhere}
+.nf-sim-stage-note{position:absolute;bottom:12px;left:12px;right:12px;text-align:center;font-size:10px;color:#d6c5da;opacity:.8}
+.nf-sim-event{border-left:2px solid #b66aaf;background:linear-gradient(110deg,rgba(48,29,56,.88),rgba(15,11,18,.95))}
+@keyframes nfSimFloat{0%,100%{translate:0 0}50%{translate:0 -7px}}
+@media(max-width:440px){.nf-sim-stage{min-height:300px;padding:20px 10px}.nf-sim-stage-cast{gap:5px;min-height:160px}.nf-sim-figure{max-width:76px}.nf-sim-figure strong{font-size:10px}}
