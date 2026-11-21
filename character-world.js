@@ -66,7 +66,7 @@ const today=()=>{const d=new Date();return [d.getFullYear(),String(d.getMonth()+
 const isDate=s=>/^\d{4}-\d{2}-\d{2}$/.test(s)&&!Number.isNaN(new Date(s+'T12:00:00').getTime())&&new Date(s+'T12:00:00').toISOString().slice(0,10)===s&&s<=today();
 const records=async key=>{const a=await get(key);return Array.isArray(a)?a:[]};
 const characters=()=>records('characters');
-let cachedJournals=[],cachedCharacters=[];let view='journal',characterId='',date=today(),voicePreviewMessage='The night remembers everything we leave unsaid.',allLocales=false,busy=false;
+let cachedJournals=[],cachedCharacters=[];let view='sim',characterId='',date=today(),voicePreviewMessage='The night remembers everything we leave unsaid.',allLocales=false,busy=false;
 const characterName=(cs,id)=>cs.find(c=>c.id===id)?.name||'Unknown character';
 const short=s=>clean(s).replace(/[\r\n]+/g,' ').slice(0,90);
 const userUnlocked=async()=>{try{const sec=await get('security');return Boolean(sec&&!sec.setupNeeded&&sessionStorage.getItem('nf_unlocked')==='1'&&!state.locked)}catch{return false}};
@@ -257,10 +257,10 @@ function bindNav(){
   if(n.querySelector('[data-tab="world"]'))return;
   const b=document.createElement('button');b.dataset.tab='world';b.innerHTML='✦<br><small>World</small>';
   b.className=state.tab==='world'?'active':'';
-  b.onclick=()=>{state.tab='world';view='journal';render()};
+  b.onclick=()=>{state.tab='world';view='sim';render()};
   n.append(b);
  });
 }
 if(window.speechSynthesis?.addEventListener)window.speechSynthesis.addEventListener('voiceschanged',()=>{if(state.tab==='world'&&view==='voice'&&!document.activeElement?.matches('textarea,input'))render()});
-window.nfCharacterWorld={today,isDate,journalPrompt,postPrompt,saveJournal,savePost,commentPost,open(tab='journal'){view=['journal','social','voice'].includes(tab)?tab:'journal';state.tab='world';return render()}};
+window.nfCharacterWorld={today,isDate,journalPrompt,postPrompt,saveJournal,savePost,commentPost,open(tab='sim'){view=['sim','journal','social','voice'].includes(tab)?tab:'sim';state.tab='world';return render()}};
 })();
