@@ -3,6 +3,62 @@
 'use strict';
 if(window.__nfCharacterWorld)return;window.__nfCharacterWorld=1;
 const JKEY='nf_character_journals',PKEY='nf_character_posts';
+
+const SIMKEY='nf_world_sim';
+async function simState(){return await get(SIMKEY)||{style:'realistic',location:'The Citadel',events:[],cycle:0};}
+async function simUI(cs){
+ const s=await simState(),events=(s.events||[]).slice().reverse();
+ const styles=[['realistic','Photorealistic 3D look'],['anime','Anime 3D look']];
+ const cast=cs.map(x=>'<label class="nf-sim-cast"><input type="checkbox" data-sim-cast="'+esc(x.id)+'" checked><span>'+esc(x.name||'Unnamed')+'</span></label>').join('');
+ return head('World Simulator','A private fictional society. Characters can generate shared events, keep a timeline, and turn a scene into a playable video episode.')
+ +'<section class="card stack"><div class="row wrap"><label class="grow">Visual treatment<select class="input" id="nfSimStyle">'+styles.map(([k,v])=>'<option value="'+k+'" '+(s.style===k?'selected':'')+'>'+v+'</option>').join('')+'</select></label><label class="grow">World location<input class="input" id="nfSimLocation" maxlength="80" value="'+esc(s.location||'The Citadel')+'"></label></div>'
+ +'<div><strong>Who lives in this world?</strong><div class="nf-sim-cast-grid">'+cast+'</div></div>'
+ +'<div class="row wrap"><button class="btn primary" id="nfSimCycle">✦ Simulate next world event</button><button class="btn" id="nfSimReset">Reset simulated clock</button></div>'
+ +'<p class="tiny muted">Free-first: events are stored locally. If a free text model is connected, it writes character-specific scenes. The world clock advances when you simulate or return; this browser cannot run continuous AI while closed.</p></section>'
+ +'<section class="nf-sim-stage '+(s.style==='anime'?'anime':'realistic')+'"><div class="nf-sim-sky"></div><div class="nf-sim-horizon"></div><div class="nf-sim-title">'+esc(s.location||'The Citadel')+'</div><div class="nf-sim-subtitle">'+(s.style==='anime'?'ANIME 3D TREATMENT':'CINEMATIC REALISM TREATMENT')+'</div><div class="nf-sim-stage-cast">'+cs.slice(0,5).map((x,i)=>'<div class="nf-sim-figure" style="--i:'+i+'"><div class="nf-sim-avatar">'+(x.avatar&&/^data:image\//.test(x.avatar)?'<img src="'+esc(x.avatar)+'" alt="">':esc((x.name||'?').slice(0,1)))+'</div><strong>'+esc(x.name||'Character')+'</strong></div>').join('')+'</div><div class="nf-sim-stage-note">3D-style scene preview · imported portraits supported</div></section>'
+ +'<section class="stack"><h2>World timeline · '+Number(s.cycle||0)+' simulated cycles</h2>'
+ +(events.length?events.map(e=>'<article class="card stack nf-sim-event"><div class="row wrap"><strong class="grow">'+esc(e.title||'A moment in the world')+'</strong><span class="tiny muted">'+esc(new Date(e.at).toLocaleString())+'</span></div><p class="nf-world-prose">'+esc(e.text)+'</p><div class="tiny muted">Cast: '+esc((e.names||[]).join(', '))+'</div><button class="btn" data-sim-episode="'+esc(e.id)+'">▶ Render episode video</button></article>').join(''):'<div class="card muted">Nothing has happened yet. Simulate the first world event.</div>')
+ +'</section>'+tail();
+}
+async function runWorldCycle(world){
+ const s=await simState(),cs=await characters(),ids=[...world.querySelectorAll('[data-sim-cast]:checked')].map(x=>x.dataset.simCast),cast=cs.filter(x=>ids.includes(x.id)).slice(0,8);
+ if(cast.length<2)throw Error('Choose at least two characters for an interaction.');
+ s.style=world.querySelector('#nfSimStyle')?.value||s.style;s.location=clean(world.querySelector('#nfSimLocation')?.value||s.location).slice(0,80)||'The Citadel';
+ const names=cast.map(x=>x.name||'Unnamed').join(', ');
+ const context=cast.map(x=>'NAME: '+x.name+'\nPERSONALITY: '+(x.personality||'Not specified')+'\nBACKSTORY: '+(x.backstory||'Not specified')+'\nSCENARIO: '+(x.scenario||'Not specified')+'\nCURRENT STATE: '+(x.mood||'unknown')+' / '+(x.activity||'unknown')+'\nMEMORY: '+(Array.isArray(x.memory)?x.memory.slice(-5).map(m=>typeof m==='string'?m:m.text).filter(Boolean).join('; '):'')).join('\n\n');
+ const prompt='Simulated world cycle '+(Number(s.cycle||0)+1)+'. Location: '+s.location+'. Selected characters: '+names+'.\n\nCHARACTER DOSSIERS:\n'+context+'\n\nWrite one vivid, coherent scene in which at least two of these characters independently choose how to act and speak. Preserve their established personalities and history. Give each speaker a distinct voice. Do not write dialogue or decisions for the user. No omniscient claims about real people. Format: first line a short scene title; then 180-300 words of cinematic action and dialogue. No markdown heading symbols.';
+ let textOut;
+ try{textOut=await modelText('You are the simulation director for a persistent fictional world. Treat character profiles as canon. Characters have agency, but events remain fictional.',prompt)}
+ catch(err){throw Error('World simulation needs a configured free text model in Provider Studio. '+err.message)}
+ const lines=textOut.split('\n').map(x=>x.trim()).filter(Boolean),title=(lines[0]||'An unexpected encounter').replace(/^#+\s*/,'').slice(0,100);
+ const event={id:uid(),at:new Date().toISOString(),cycle:Number(s.cycle||0)+1,style:s.style,location:s.location,title,text:textOut,names:cast.map(x=>x.name||'Unnamed'),characterIds:cast.map(x=>x.id)};
+ s.cycle=event.cycle;s.events=[...(s.events||[]),event].slice(-60);s.lastVisited=event.at;await put(SIMKEY,s);
+ return event;
+}
+async function renderSimEpisode(event){
+ if(!event)throw Error('Episode not found.');
+ if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream)throw Error('Video recording is not supported by this browser. Try Chrome on Android.');
+ const canvas=document.createElement('canvas');canvas.width=1280;canvas.height=720;
+ const ctx=canvas.getContext('2d'),stream=canvas.captureStream(30),chunks=[];
+ const recorder=new MediaRecorder(stream,{mimeType:MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm'});
+ recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+ const finished=new Promise((resolve,reject)=>{recorder.onerror=()=>reject(Error('Video rendering failed.'));recorder.onstop=()=>{const blob=new Blob(chunks,{type:'video/webm'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='character-forge-episode-'+event.cycle+'.webm';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);resolve() }});
+ const words=(event.text||'').replace(/\s+/g,' ').split(' '),start=performance.now(),duration=12000;
+ function frame(now){const t=Math.min(1,(now-start)/duration),w=canvas.width,h=canvas.height;
+  const g=ctx.createLinearGradient(0,0,w,h);g.addColorStop(0,event.style==='anime'?'#33215d':'#111b2c');g.addColorStop(.55,'#100d18');g.addColorStop(1,'#08070d');ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+  for(let i=0;i<90;i++){const x=(i*173+Math.sin(now/1700+i)*28)%w,y=(i*97)%h;ctx.fillStyle='rgba(255,220,245,'+(0.12+(i%4)*.07)+')';ctx.fillRect(x,y,2,2)}
+  ctx.fillStyle='rgba(180,120,190,.13)';ctx.beginPath();ctx.ellipse(w/2,h*.82,570,170,0,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='rgba(230,180,240,.18)';ctx.lineWidth=2;for(let i=0;i<14;i++){ctx.beginPath();ctx.moveTo(w/2+i*85-550,h*.67);ctx.lineTo(w/2+i*150-950,h);ctx.stroke()}
+  ctx.textAlign='center';ctx.fillStyle='#f8eafa';ctx.font='700 24px system-ui';ctx.fillText((event.location||'THE WORLD').toUpperCase(),w/2,90);
+  ctx.font='800 48px Georgia';ctx.fillText(event.title||'A moment in the world',w/2,165);
+  const names=(event.names||[]);names.slice(0,4).forEach((n,i)=>{const x=w*(i+1)/(Math.min(names.length,4)+1),y=390+Math.sin(now/550+i*1.7)*10;ctx.fillStyle=event.style==='anime'?'#f7b7ed':'#b7c4d8';ctx.beginPath();ctx.ellipse(x,y-78,48,58,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#17121d';ctx.beginPath();ctx.roundRect(x-45,y-18,90,150,26);ctx.fill();ctx.fillStyle='#fff';ctx.font='600 20px system-ui';ctx.fillText(n.slice(0,18),x,y+165)});
+  const visible=Math.max(12,Math.floor(words.length*Math.min(1,t*1.5))),snippet=words.slice(0,visible).join(' '),wrapped=[];let line='';for(const word of snippet.split(' ')){if(ctx.measureText(line+' '+word).width>1060){wrapped.push(line);line=word}else line+=(line?' ':'')+word}if(line)wrapped.push(line);
+  ctx.fillStyle='rgba(5,4,9,.78)';ctx.fillRect(70,565,1140,115);ctx.fillStyle='#fff0fb';ctx.font='22px Georgia';wrapped.slice(-3).forEach((v,i)=>ctx.fillText(v,w/2,602+i*28));
+  if(t<1)requestAnimationFrame(frame);else{recorder.stop();stream.getTracks().forEach(x=>x.stop())}
+ }
+ recorder.start();requestAnimationFrame(frame);await finished;
+}
+
 const clean=v=>String(v??'');
 const esc=s=>clean(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>crypto.randomUUID();
@@ -19,7 +75,7 @@ function choose(cs,id='nfWorldCharacter'){
  return '<label>Character<select id="'+id+'" class="input">'+cs.map(c=>'<option value="'+esc(c.id)+'" '+(c.id===characterId?'selected':'')+'>'+esc(c.name||'Unnamed')+'</option>').join('')+'</select></label>';
 }
 function tabs(){
- return '<div class="nf-world-tabs row wrap">'+[['journal','📓 Journal'],['social','✦ Social feed'],['voice','🎙 Voice Lab']].map(([k,t])=>'<button class="btn '+(k===view?'primary':'')+'" data-nf-world-view="'+k+'">'+t+'</button>').join('')+'</div>';
+ return '<div class="nf-world-tabs row wrap">'+[['sim','🌌 World Sim'],['journal','📓 Journal'],['social','✦ Social feed'],['voice','🎙 Voice Lab']].map(([k,t])=>'<button class="btn '+(k===view?'primary':'')+'" data-nf-world-view="'+k+'">'+t+'</button>').join('')+'</div>';
 }
 function head(title,subtitle){
  return '<main class="shell nf-world"><header class="topbar"><div><div class="brand">NIGHTSHADE WORLD · PRIVATE FICTION</div><h1>'+esc(title)+'</h1></div></header><p class="muted">'+esc(subtitle)+'</p>'+tabs()+'<div class="nf-world-content">';
@@ -120,7 +176,7 @@ async function voiceUI(cs){
 async function page(){
  const cs=await characters();selected(cs);
  if(!cs.length)return head('World','Create a character first to unlock journals, a fictional social feed, and voice controls.')+'<section class="card">No characters saved yet.</section>'+tail();
- if(view==='journal')return journalUI(cs);if(view==='social')return socialUI(cs);return voiceUI(cs);
+ if(view==='sim')return simUI(cs);if(view==='journal')return journalUI(cs);if(view==='social')return socialUI(cs);return voiceUI(cs);
 }
 function status(message){const el=document.querySelector('#nfWorldStatus');if(el)el.textContent=message}
 function lockButtons(buttons,yes){buttons.forEach(b=>{if(b)b.disabled=yes})}
@@ -139,6 +195,9 @@ function directVoice(text,character){
 }
 function attach(){
  const world=document.querySelector('.nf-world');if(!world)return;
+ const simRun=world.querySelector('#nfSimCycle');if(simRun)simRun.onclick=async()=>{if(busy)return;busy=true;simRun.disabled=true;status('Characters are deciding what happens next…');try{const event=await runWorldCycle(world);await render();status('World event saved: '+event.title)}catch(e){status(e.message)}finally{busy=false;if(simRun.isConnected)simRun.disabled=false}};
+ const simReset=world.querySelector('#nfSimReset');if(simReset)simReset.onclick=async()=>{if(!confirm('Reset the simulated clock? Existing events will be kept.'))return;const s=await simState();s.cycle=0;await put(SIMKEY,s);await render()};
+ world.querySelectorAll('[data-sim-episode]').forEach(b=>b.onclick=async()=>{if(busy)return;busy=true;b.disabled=true;status('Rendering a cinematic episode…');try{const s=await simState(),event=s.events.find(x=>x.id===b.dataset.simEpisode);await renderSimEpisode(event);status('Episode video exported.')}catch(e){status(e.message)}finally{busy=false;if(b.isConnected)b.disabled=false}});
  world.querySelectorAll('[data-nf-world-view]').forEach(b=>b.onclick=()=>{view=b.dataset.nfWorldView;render()});
  const pick=world.querySelector('#nfWorldCharacter');if(pick)pick.onchange=()=>{characterId=pick.value;render()};
  const day=world.querySelector('#nfJournalDate');if(day)day.onchange=()=>{if(isDate(day.value)){date=day.value;render()}else{date=today();status('Choose a real date no later than today.')}};
